@@ -1,0 +1,17 @@
+{
+  "name": "flex",
+  "private": true,
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "build": "npm --workspace @flex/web run build",
+    "predev": "node scripts/prepare-dev.mjs",
+    "dev": "docker compose -f compose.dev.yml up --build",
+    "dev:web": "npm --workspace @flex/web run dev",
+    "lint": "npm --workspace @flex/web run lint",
+    "test": "npm --workspace @flex/web run test",
+    "typecheck": "npm --workspace @flex/web run typecheck"
+  },
+  "workspaces": [
+    "apps/web"
+  ]
+}

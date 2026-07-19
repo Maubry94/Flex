@@ -1,0 +1,403 @@
+openapi: 3.1.0
+info:
+  title: Flex API
+  version: 0.1.0
+  description: API du serveur multimédia personnel Flex.
+servers:
+  - url: /api
+paths:
+  /home:
+    get:
+      operationId: getHome
+      summary: Retourne les sections dynamiques de l'accueil.
+      responses:
+        "200":
+          description: Vidéos en cours et récemment ajoutées.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [continueWatching, recentlyAdded]
+                properties:
+                  continueWatching:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaFile"
+                  recentlyAdded:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaFile"
+  /health:
+    get:
+      operationId: getHealth
+      summary: Vérifie que le serveur Flex répond.
+      responses:
+        "200":
+          description: Le serveur fonctionne.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /libraries:
+    get:
+      operationId: listLibraries
+      summary: Liste les bibliothèques configurées.
+      responses:
+        "200":
+          description: Liste des bibliothèques.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Library"
+    post:
+      operationId: createLibrary
+      summary: Ajoute un dossier de médias à Flex.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLibraryRequest"
+      responses:
+        "201":
+          description: Bibliothèque créée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "409":
+          description: Ce chemin est déjà configuré.
+        "422":
+          description: Le nom ou le chemin est invalide.
+  /libraries/{libraryId}/scan:
+    parameters:
+      - $ref: "#/components/parameters/LibraryId"
+    post:
+      operationId: scanLibrary
+      summary: Analyse les vidéos présentes dans une bibliothèque.
+      responses:
+        "200":
+          description: Résultat de l'analyse.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+        "404":
+          description: Bibliothèque introuvable.
+  /libraries/{libraryId}:
+    parameters:
+      - $ref: "#/components/parameters/LibraryId"
+    patch:
+      operationId: updateLibrary
+      summary: Modifie le nom ou le dossier d'une bibliothèque.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLibraryRequest"
+      responses:
+        "200":
+          description: Bibliothèque mise à jour.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "404":
+          description: Bibliothèque introuvable.
+    delete:
+      operationId: deleteLibrary
+      summary: Retire une bibliothèque et son index sans supprimer ses fichiers.
+      responses:
+        "204":
+          description: Bibliothèque retirée.
+        "404":
+          description: Bibliothèque introuvable.
+  /media:
+    get:
+      operationId: listMedia
+      summary: Liste les vidéos indexées d'une bibliothèque.
+      parameters:
+        - $ref: "#/components/parameters/LibraryIdQuery"
+      responses:
+        "200":
+          description: Liste des vidéos.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaFile"
+  /media/{mediaId}:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: getMedia
+      summary: Retourne les informations d'une vidéo.
+      responses:
+        "200":
+          description: Informations de la vidéo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaFile"
+        "404":
+          description: Vidéo introuvable.
+  /media/{mediaId}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: getMediaThumbnail
+      summary: Génère ou retourne la miniature mise en cache d'une vidéo.
+      responses:
+        "200":
+          description: Miniature JPEG.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+  /media/{mediaId}/stream:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: streamMedia
+      summary: Lit directement le fichier vidéo avec prise en charge HTTP Range.
+      responses:
+        "200":
+          description: Fichier vidéo complet.
+        "206":
+          description: Portion du fichier demandée par le lecteur.
+  /media/{mediaId}/playback:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: getMediaPlayback
+      summary: Sélectionne la stratégie de lecture de la vidéo.
+      responses:
+        "200":
+          description: Lecture directe ou manifeste HLS transcodé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+  /media/{mediaId}/hls/{filename}:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getMediaHLSFile
+      summary: Génère puis retourne un manifeste ou segment HLS.
+      responses:
+        "200":
+          description: Manifeste M3U8 ou segment MPEG-TS.
+  /media/{mediaId}/progress:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: getPlaybackProgress
+      summary: Retourne la progression de lecture locale.
+      responses:
+        "200":
+          description: Progression actuelle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackProgress"
+    put:
+      operationId: savePlaybackProgress
+      summary: Sauvegarde la position de lecture locale.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavePlaybackProgress"
+      responses:
+        "200":
+          description: Progression sauvegardée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackProgress"
+components:
+  parameters:
+    LibraryId:
+      name: libraryId
+      in: path
+      required: true
+      schema:
+        type: string
+    LibraryIdQuery:
+      name: libraryId
+      in: query
+      required: true
+      schema:
+        type: string
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          const: ok
+        service:
+          type: string
+          const: flex
+    Library:
+      type: object
+      additionalProperties: false
+      required: [id, name, path, createdAt, lastScanAt, lastScanDiscovered, lastScanIndexed, lastScanSkipped]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastScanAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        lastScanDiscovered:
+          type: integer
+          minimum: 0
+        lastScanIndexed:
+          type: integer
+          minimum: 0
+        lastScanSkipped:
+          type: integer
+          minimum: 0
+    CreateLibraryRequest:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          minLength: 1
+    ScanResult:
+      type: object
+      additionalProperties: false
+      required: [discovered, indexed, skipped]
+      properties:
+        discovered:
+          type: integer
+          minimum: 0
+        indexed:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+    MediaFile:
+      type: object
+      additionalProperties: false
+      required: [id, libraryId, filename, sizeBytes, durationMs, width, height, container, videoCodec, audioCodec, modifiedAt, progressMs, completed]
+      properties:
+        id:
+          type: string
+        libraryId:
+          type: string
+        filename:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        durationMs:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        container:
+          type: string
+        videoCodec:
+          type: string
+        audioCodec:
+          type: string
+        modifiedAt:
+          type: string
+          format: date-time
+        progressMs:
+          type: integer
+          format: int64
+          minimum: 0
+        completed:
+          type: boolean
+    PlaybackInfo:
+      type: object
+      additionalProperties: false
+      required: [mode, url]
+      properties:
+        mode:
+          type: string
+          enum: [direct, hls]
+        url:
+          type: string
+    PlaybackProgress:
+      type: object
+      additionalProperties: false
+      required: [mediaId, positionMs, durationMs, completed, updatedAt]
+      properties:
+        mediaId:
+          type: string
+        positionMs:
+          type: integer
+          format: int64
+          minimum: 0
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 0
+        completed:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    SavePlaybackProgress:
+      type: object
+      additionalProperties: false
+      required: [positionMs, durationMs]
+      properties:
+        positionMs:
+          type: integer
+          format: int64
+          minimum: 0
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 0

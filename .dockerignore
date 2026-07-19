@@ -1,0 +1,12 @@
+.git
+.agents
+.codex
+.env*
+data
+media
+node_modules
+**/node_modules
+**/dist
+**/coverage
+*.db*
+

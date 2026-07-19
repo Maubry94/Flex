@@ -1,0 +1,36 @@
+name: flex
+
+services:
+  flex:
+    image: ${FLEX_IMAGE:-ghcr.io/flex-media/flex:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flex
+    restart: unless-stopped
+    user: "${FLEX_UID:-1000}:${FLEX_GID:-1000}"
+    ports:
+      - "${FLEX_PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      FLEX_CONFIG_DIR: /config
+      FLEX_CACHE_DIR: /cache
+      FLEX_MEDIA_DIR: /media
+    volumes:
+      - ${FLEX_CONFIG_PATH:-./data/config}:/config
+      - ${FLEX_CACHE_PATH:-./data/cache}:/cache
+      - ${FLEX_MEDIA_PATH:-./media}:/media:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+

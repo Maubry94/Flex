@@ -1,0 +1,43 @@
+name: flex-dev
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.dev
+    working_dir: /src/apps/server
+    command: go run ./cmd/flex
+    environment:
+      FLEX_HOST: 0.0.0.0
+      FLEX_PORT: 8080
+      FLEX_CONFIG_DIR: /data/config
+      FLEX_CACHE_DIR: /data/cache
+      FLEX_MEDIA_DIR: /media
+      FLEX_WEB_DIR: /src/apps/web/dist
+    volumes:
+      - .:/src
+      - go-cache:/go/pkg/mod
+      - ./data:/data
+      - ${FLEX_MEDIA_PATH:-./media}:/media:ro
+    ports:
+      - "8080:8080"
+
+  web:
+    image: node:24-alpine
+    working_dir: /src
+    command: sh -c "npm ci && npm --workspace @flex/web run dev"
+    environment:
+      FLEX_API_URL: http://server:8080
+    volumes:
+      - .:/src
+      - node-modules:/src/node_modules
+      - web-node-modules:/src/apps/web/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+volumes:
+  go-cache:
+  node-modules:
+  web-node-modules:
