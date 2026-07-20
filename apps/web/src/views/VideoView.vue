@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Film, LoaderCircle, Pause, Play, RotateCcw, RotateCw } from '@lucide/vue'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { ArrowLeft, CircleCheck, Film, Heart, LoaderCircle, Pause, Pencil, Play, RotateCcw, RotateCw } from '@lucide/vue'
 import type HlsInstance from 'hls.js'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { toast } from 'vue-sonner'
 
-import { getMediaByID, getPlayback, thumbnailURL } from '@/lib/api/media'
-import type { PlaybackInfo } from '@/lib/api/media'
-import { getProgress, saveProgress } from '@/lib/api/progress'
-import { mediaTitle } from '@/lib/media-title'
+import VideoMetadataDialog from '@/components/media/VideoMetadataDialog.vue'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { getMediaByID, getPlayback, thumbnailURL, updateMedia } from '@/lib/api/media'
+import type { MediaFile, PlaybackInfo } from '@/lib/api/media'
+import { getProgress, saveProgress } from '@/lib/api/progress'
 
 const route = useRoute()
 const queryClient = useQueryClient()
@@ -21,6 +24,8 @@ const playerContainer = ref<HTMLElement>()
 const resumeApplied = ref(false)
 const isPlaying = ref(false)
 const showTouchControls = ref(true)
+const isMetadataDialogOpen = ref(false)
+const hasManualProgressOverride = ref(false)
 let lastPeriodicSave = 0
 let hls: HlsInstance | undefined
 let touchControlsTimer: ReturnType<typeof setTimeout> | undefined
@@ -37,6 +42,52 @@ const progressQuery = useQuery({
   queryKey: computed(() => ['progress', mediaID.value]),
   queryFn: ({ signal }) => getProgress(mediaID.value, signal),
 })
+const favoriteMutation = useMutation({
+  mutationFn: async () => {
+    const item = mediaQuery.data.value
+    if (!item) throw new Error('Vidéo indisponible')
+    return updateMedia(item.id, {
+      title: item.title,
+      description: item.description,
+      recordedAt: item.recordedAt?.slice(0, 10) ?? null,
+      favorite: !item.favorite,
+    })
+  },
+  onSuccess: (item) => {
+    applyUpdatedMedia(item)
+    toast.success(item.favorite ? 'Ajoutée aux favoris' : 'Retirée des favoris')
+  },
+  onError: (error) => toast.error(error instanceof Error ? error.message : 'Impossible de modifier les favoris'),
+})
+const watchedMutation = useMutation({
+  mutationFn: async () => {
+    const item = mediaQuery.data.value
+    if (!item) throw new Error('Vidéo indisponible')
+    return saveProgress(item.id, {
+      positionMs: item.completed ? 0 : item.durationMs,
+      durationMs: item.durationMs,
+    })
+  },
+  onSuccess: (progress) => {
+    hasManualProgressOverride.value = true
+    queryClient.setQueryData(['progress', mediaID.value], progress)
+    queryClient.setQueryData<MediaFile>(['media-detail', mediaID.value], (item) => item
+      ? { ...item, progressMs: progress.positionMs, completed: progress.completed }
+      : item)
+    void queryClient.invalidateQueries({ queryKey: ['media'] })
+    void queryClient.invalidateQueries({ queryKey: ['home'] })
+    toast.success(progress.completed ? 'Vidéo marquée comme vue' : 'Vidéo marquée comme non vue')
+  },
+  onError: (error) => toast.error(error instanceof Error ? error.message : 'Impossible de modifier le statut'),
+})
+
+function applyUpdatedMedia(item: MediaFile): void {
+  queryClient.setQueryData(['media-detail', mediaID.value], item)
+  void queryClient.invalidateQueries({ queryKey: ['media'] })
+  void queryClient.invalidateQueries({ queryKey: ['home'] })
+  void queryClient.invalidateQueries({ queryKey: ['favorites'] })
+  void queryClient.invalidateQueries({ queryKey: ['global-search'] })
+}
 
 watch(
   [videoElement, () => playbackQuery.data.value],
@@ -49,6 +100,7 @@ watch(
 
 watch(mediaID, () => {
 	resumeApplied.value = false
+	hasManualProgressOverride.value = false
 	lastPeriodicSave = 0
 })
 
@@ -71,12 +123,13 @@ function applyResume(): void {
 
 function persistProgress(refreshLibrary: boolean): void {
   const video = videoElement.value
-  if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return
-  void saveProgress(mediaID.value, {
+  const item = mediaQuery.data.value
+  if (hasManualProgressOverride.value || !video || !item || !Number.isFinite(video.duration) || video.duration <= 0) return
+  void saveProgress(item.id, {
     positionMs: Math.round(video.currentTime * 1000),
     durationMs: Math.round(video.duration * 1000),
   }).then((progress) => {
-    queryClient.setQueryData(['progress', mediaID.value], progress)
+    queryClient.setQueryData(['progress', item.id], progress)
     if (refreshLibrary) void queryClient.invalidateQueries({ queryKey: ['media'] })
   }).catch(() => undefined)
 }
@@ -157,6 +210,7 @@ function revealTouchControls(): void {
 }
 
 function handlePlay(): void {
+	hasManualProgressOverride.value = false
 	isPlaying.value = true
 	isPreparing.value = false
 	revealTouchControls()
@@ -219,12 +273,16 @@ function formatDuration(durationMs: number): string {
 function formatSize(sizeBytes: number): string {
   return new Intl.NumberFormat('fr-FR', { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 }).format(sizeBytes / 1_000_000)
 }
+
+function formatRecordedDate(value: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(value))
+}
 </script>
 
 <template>
   <section class="min-h-[calc(100dvh-4rem)]">
     <div v-if="mediaQuery.isPending.value" class="grid min-h-[70dvh] place-items-center"><LoaderCircle class="size-7 animate-spin text-primary" /></div>
-    <div v-else-if="mediaQuery.data.value" class="mx-auto max-w-[1500px] px-5 py-8 lg:px-10 lg:py-10">
+    <div v-else-if="mediaQuery.data.value" class="mx-auto max-w-[1500px] px-4 py-6 sm:px-5 sm:py-8 lg:px-10 lg:py-10">
       <RouterLink :to="{ name: 'library', params: { libraryId: mediaQuery.data.value.libraryId } }" class="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground">
         <ArrowLeft class="size-4" />
         Retour à la bibliothèque
@@ -276,8 +334,21 @@ function formatSize(sizeBytes: number): string {
 
       <div class="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div class="min-w-0">
-          <h1 class="truncate text-2xl font-bold tracking-tight sm:text-3xl" :title="mediaTitle(mediaQuery.data.value.filename)">{{ mediaTitle(mediaQuery.data.value.filename) }}</h1>
-          <p class="mt-3 text-sm text-muted-foreground">Vidéo personnelle</p>
+          <div class="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
+            <h1 class="break-words text-2xl font-bold tracking-tight sm:min-w-0 sm:truncate sm:text-3xl" :title="mediaQuery.data.value.title">{{ mediaQuery.data.value.title }}</h1>
+            <div class="flex max-w-full shrink-0 flex-wrap gap-2">
+              <Button variant="ghost" size="icon" :aria-label="mediaQuery.data.value.completed ? 'Marquer comme non vue' : 'Marquer comme vue'" :disabled="watchedMutation.isPending.value" @click="watchedMutation.mutate()">
+                <CircleCheck :class="mediaQuery.data.value.completed && 'fill-emerald-400/15 text-emerald-400'" />
+              </Button>
+              <Button variant="ghost" size="icon" :aria-label="mediaQuery.data.value.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'" :disabled="favoriteMutation.isPending.value" @click="favoriteMutation.mutate()">
+                <Heart :class="mediaQuery.data.value.favorite && 'fill-primary text-primary'" />
+              </Button>
+              <Button class="max-sm:flex-1" variant="secondary" @click="isMetadataDialogOpen = true"><Pencil />Modifier</Button>
+            </div>
+          </div>
+          <p v-if="mediaQuery.data.value.description" class="mt-3 max-w-3xl whitespace-pre-line text-sm leading-6 text-muted-foreground">{{ mediaQuery.data.value.description }}</p>
+          <p v-else class="mt-3 text-sm text-muted-foreground">Vidéo personnelle</p>
+          <p v-if="mediaQuery.data.value.recordedAt" class="mt-2 text-xs text-muted-foreground">Enregistrée le {{ formatRecordedDate(mediaQuery.data.value.recordedAt) }}</p>
           <span v-if="playbackQuery.data.value" class="mt-4 inline-flex rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             {{ playbackQuery.data.value.mode === 'direct' ? 'Lecture directe' : 'Conversion HLS' }}
           </span>
@@ -295,7 +366,10 @@ function formatSize(sizeBytes: number): string {
           </CardContent>
         </Card>
       </div>
+      <VideoMetadataDialog v-model:open="isMetadataDialogOpen" :item="mediaQuery.data.value" @saved="applyUpdatedMedia" />
     </div>
-    <div v-else class="grid min-h-[70dvh] place-items-center text-center"><div><Film class="mx-auto size-8 text-muted-foreground" /><p class="mt-3 font-medium">Vidéo introuvable</p></div></div>
+    <Empty v-else class="mx-auto min-h-[70dvh] max-w-[1500px] border-0">
+      <EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle>Vidéo introuvable</EmptyTitle><EmptyDescription>Cette vidéo n’existe plus ou n’est plus accessible.</EmptyDescription></EmptyHeader>
+    </Empty>
   </section>
 </template>

@@ -12,6 +12,17 @@ export interface MediaFile {
   modifiedAt: string
   progressMs: number
   completed: boolean
+  title: string
+  description: string
+  recordedAt: string | null
+  favorite: boolean
+}
+
+export interface UpdateMediaInput {
+  title: string
+  description: string
+  recordedAt: string | null
+  favorite: boolean
 }
 
 export interface ScanResult {
@@ -60,6 +71,10 @@ function isMediaFile(value: unknown): value is MediaFile {
     typeof value.modifiedAt === 'string'
     && typeof value.progressMs === 'number'
     && typeof value.completed === 'boolean'
+    && typeof value.title === 'string'
+    && typeof value.description === 'string'
+    && (value.recordedAt === null || typeof value.recordedAt === 'string')
+    && typeof value.favorite === 'boolean'
   )
 }
 
@@ -111,12 +126,34 @@ export async function getMedia(libraryId: string, signal?: AbortSignal): Promise
   return body.items
 }
 
+export async function getFavorites(signal?: AbortSignal): Promise<MediaFile[]> {
+  const response = await fetch('/api/favorites', signal === undefined ? undefined : { signal })
+  if (!response.ok) throw new Error('Impossible de charger les favoris')
+  const body: unknown = await response.json()
+  if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isMediaFile)) {
+    throw new Error('La réponse des favoris est invalide')
+  }
+  return body.items
+}
+
 export async function getMediaByID(mediaId: string, signal?: AbortSignal): Promise<MediaFile> {
   const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger la vidéo')
 
   const body: unknown = await response.json()
   if (!isMediaFile(body)) throw new Error('La réponse de la vidéo est invalide')
+  return body
+}
+
+export async function updateMedia(mediaId: string, input: UpdateMediaInput): Promise<MediaFile> {
+  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error('Impossible de modifier la vidéo')
+  const body: unknown = await response.json()
+  if (!isMediaFile(body)) throw new Error('La réponse de modification est invalide')
   return body
 }
 

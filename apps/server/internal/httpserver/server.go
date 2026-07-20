@@ -31,9 +31,11 @@ type libraryService interface {
 
 type mediaService interface {
 	List(ctx context.Context, libraryID string) ([]media.File, error)
+	Favorites(ctx context.Context) ([]media.File, error)
 	Get(ctx context.Context, id string) (media.File, error)
 	Home(ctx context.Context) (media.Home, error)
 	Search(ctx context.Context, query string) ([]media.SearchResult, error)
+	UpdateMetadata(ctx context.Context, id string, input media.MetadataInput) (media.File, error)
 	Thumbnail(ctx context.Context, id string) (string, error)
 	Transcode(ctx context.Context, id string) (string, error)
 }
@@ -59,8 +61,10 @@ func New(cfg config.Config, logger *slog.Logger, libraries libraryService, media
 	mux.HandleFunc("GET /api/libraries/{libraryID}/scan", scanStatusHandler(scans))
 	mux.HandleFunc("POST /api/libraries/{libraryID}/scan", scanLibraryHandler(scans, logger))
 	mux.HandleFunc("GET /api/media", listMediaHandler(mediaFiles, logger))
+	mux.HandleFunc("GET /api/favorites", favoritesHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/search", searchMediaHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}", getMediaHandler(mediaFiles, logger))
+	mux.HandleFunc("PATCH /api/media/{mediaID}", updateMediaHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/thumbnail", thumbnailHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/stream", streamHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/playback", playbackHandler(mediaFiles, logger))

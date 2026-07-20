@@ -7,7 +7,7 @@ dist/
 coverage/
 
 data/
-media/
+/media/
 .media-docker-owned/
 *.db
 *.db-shm

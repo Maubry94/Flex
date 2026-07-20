@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { searchMedia } from './media'
+import { getFavorites, searchMedia, updateMedia } from './media'
 
 const searchResult = {
   id: 'media-1',
@@ -17,6 +17,10 @@ const searchResult = {
   modifiedAt: '2026-07-20T00:00:00Z',
   progressMs: 0,
   completed: false,
+  title: 'Blue Monday',
+  description: '',
+  recordedAt: null,
+  favorite: false,
 }
 
 describe('searchMedia', () => {
@@ -39,5 +43,46 @@ describe('searchMedia', () => {
     )
 
     await expect(searchMedia('Blue')).rejects.toThrow('invalide')
+  })
+})
+
+describe('updateMedia', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('updates editorial metadata without changing the file', async () => {
+    const updated = { ...searchResult, description: 'Une vidéo personnelle', favorite: true }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(updated), { status: 200 }),
+    )
+
+    await expect(updateMedia(searchResult.id, {
+      title: updated.title,
+      description: updated.description,
+      recordedAt: null,
+      favorite: true,
+    })).resolves.toEqual(updated)
+    expect(fetchMock).toHaveBeenCalledWith('/api/media/media-1', expect.objectContaining({ method: 'PATCH' }))
+  })
+})
+
+describe('getFavorites', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('returns the favorite media list', async () => {
+    const favorite = { ...searchResult, favorite: true }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ items: [favorite] }), { status: 200 }),
+    )
+
+    await expect(getFavorites()).resolves.toEqual([favorite])
+    expect(fetchMock).toHaveBeenCalledWith('/api/favorites', undefined)
+  })
+
+  it('rejects an invalid favorite response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ items: [{ id: 'incomplete' }] }), { status: 200 }),
+    )
+
+    await expect(getFavorites()).rejects.toThrow('invalide')
   })
 })

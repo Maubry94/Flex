@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { toTypedSchema } from '@vee-validate/zod'
-import { ArrowLeft, LoaderCircle, Trash2 } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { ArrowLeft, CircleAlert, LoaderCircle, Trash2 } from '@lucide/vue'
+import { computed, watch } from 'vue'
 import { useForm } from 'vee-validate'
 import { useRoute, useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { ApiError, deleteLibrary, getLibraries, updateLibrary } from '@/lib/api/libraries'
@@ -18,7 +20,6 @@ const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
 const libraryID = computed(() => String(route.params.libraryId))
-const successMessage = ref('')
 
 const libraryFormSchema = toTypedSchema(z.object({
   name: z.string().trim().min(1, 'Le nom est requis.').max(100, 'Le nom est trop long.'),
@@ -38,12 +39,16 @@ const updateMutation = useMutation({
   mutationFn: (values: { name: string, path: string }) => updateLibrary(libraryID.value, values),
   onSuccess: async () => {
     await queryClient.invalidateQueries({ queryKey: ['libraries'] })
-    successMessage.value = 'Modifications enregistrées.'
+    toast.success('Modifications enregistrées')
   },
   onError: (error) => {
-    if (!(error instanceof ApiError)) return
+    if (!(error instanceof ApiError)) {
+      toast.error(error instanceof Error ? error.message : 'Impossible de modifier la bibliothèque')
+      return
+    }
     if (error.code === 'invalid_name') libraryForm.setFieldError('name', error.message)
     if (error.code === 'invalid_path' || error.code === 'path_conflict') libraryForm.setFieldError('path', error.message)
+    if (!['invalid_name', 'invalid_path', 'path_conflict'].includes(error.code)) toast.error(error.message)
   },
 })
 
@@ -56,8 +61,10 @@ const deleteMutation = useMutation({
   onSuccess: async () => {
     await queryClient.invalidateQueries({ queryKey: ['libraries'] })
     await queryClient.invalidateQueries({ queryKey: ['home'] })
+    toast.success('Bibliothèque supprimée')
     await router.push({ name: 'libraries' })
   },
+  onError: (error) => toast.error(error instanceof Error ? error.message : 'Impossible de supprimer la bibliothèque'),
 })
 
 const errorMessage = computed(() => {
@@ -80,7 +87,7 @@ function formatDate(value: string): string {
 
 <template>
   <section class="min-h-[calc(100dvh-4rem)]">
-    <div class="mx-auto max-w-4xl px-5 py-10 lg:px-10 lg:py-14">
+    <div class="mx-auto max-w-4xl px-4 py-8 sm:px-5 sm:py-10 lg:px-10 lg:py-14">
       <RouterLink :to="{ name: 'library', params: { libraryId: libraryID } }" class="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"><ArrowLeft class="size-4" />Retour à la bibliothèque</RouterLink>
       <div v-if="librariesQuery.isPending.value" class="grid min-h-96 place-items-center"><LoaderCircle class="size-7 animate-spin text-primary" /></div>
       <template v-else-if="library">
@@ -88,8 +95,8 @@ function formatDate(value: string): string {
 
         <Card class="mt-10 gap-0 rounded-2xl border-white/8 bg-card/60 py-0 shadow-none">
           <form novalidate @submit="submitUpdate">
-            <CardHeader class="p-6 pb-0"><CardTitle>Informations générales</CardTitle></CardHeader>
-            <CardContent class="p-6">
+            <CardHeader class="p-5 pb-0 sm:p-6 sm:pb-0"><CardTitle>Informations générales</CardTitle></CardHeader>
+            <CardContent class="p-5 sm:p-6">
               <div class="grid gap-5 sm:grid-cols-2">
                 <FormField v-slot="{ componentField }" name="name">
                   <FormItem><FormLabel>Nom</FormLabel><FormControl><Input class="h-11 rounded-xl border-white/10 bg-white/5 px-3.5 shadow-none focus-visible:ring-primary/20" v-bind="asForwardedProps(componentField)" /></FormControl><FormMessage /></FormItem>
@@ -99,18 +106,17 @@ function formatDate(value: string): string {
                 </FormField>
               </div>
               <p v-if="errorMessage" class="mt-4 rounded-xl border border-red-400/15 bg-red-400/8 px-3 py-2.5 text-sm text-red-300">{{ errorMessage }}</p>
-              <p v-if="successMessage" class="mt-4 text-sm text-emerald-400">{{ successMessage }}</p>
-              <div class="mt-6 flex justify-end"><Button type="submit" :disabled="updateMutation.isPending.value"><LoaderCircle v-if="updateMutation.isPending.value" class="animate-spin" />Enregistrer</Button></div>
+              <div class="mt-6 flex justify-stretch sm:justify-end"><Button class="w-full sm:w-auto" type="submit" :disabled="updateMutation.isPending.value"><LoaderCircle v-if="updateMutation.isPending.value" class="animate-spin" />Enregistrer</Button></div>
             </CardContent>
           </form>
         </Card>
 
         <Card class="mt-6 gap-0 rounded-2xl border-white/8 bg-card/60 py-0 shadow-none">
-          <CardHeader class="p-6 pb-0"><CardTitle>Dernière analyse</CardTitle></CardHeader>
-          <CardContent class="p-6">
+          <CardHeader class="p-5 pb-0 sm:p-6 sm:pb-0"><CardTitle>Dernière analyse</CardTitle></CardHeader>
+          <CardContent class="p-5 sm:p-6">
             <p v-if="library.lastScanAt" class="text-sm text-muted-foreground">{{ formatDate(library.lastScanAt) }}</p>
             <p v-else class="text-sm text-muted-foreground">Cette bibliothèque n'a pas encore été analysée depuis l'ajout du suivi.</p>
-            <dl v-if="library.lastScanAt" class="mt-5 grid grid-cols-3 gap-4 text-sm">
+            <dl v-if="library.lastScanAt" class="mt-5 grid grid-cols-3 gap-2 text-sm sm:gap-4">
             <div><dt class="text-xs text-muted-foreground">Détectées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanDiscovered }}</dd></div>
             <div><dt class="text-xs text-muted-foreground">Indexées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanIndexed }}</dd></div>
             <div><dt class="text-xs text-muted-foreground">Ignorées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanSkipped }}</dd></div>
@@ -118,15 +124,17 @@ function formatDate(value: string): string {
           </CardContent>
         </Card>
 
-        <Card class="mt-6 gap-0 rounded-2xl border-red-400/15 bg-red-400/[0.025] py-0 shadow-none">
-          <CardHeader class="p-6 pb-0"><CardTitle class="text-red-300">Zone dangereuse</CardTitle></CardHeader>
-          <CardContent class="p-6">
-            <p class="text-sm leading-6 text-muted-foreground">Retire cette bibliothèque et son index de Flex. Les fichiers présents dans {{ library.path }} ne seront jamais supprimés.</p>
-            <Button class="mt-5" variant="secondary" :disabled="deleteMutation.isPending.value" @click="confirmDelete"><Trash2 />Supprimer la bibliothèque</Button>
+        <Card class="mt-6 gap-0 rounded-2xl border-red-400/15 bg-red-400/2.5 py-0 shadow-none">
+          <CardHeader class="p-5 pb-0 sm:p-6 sm:pb-0"><CardTitle class="text-red-300">Zone dangereuse</CardTitle></CardHeader>
+          <CardContent class="p-5 sm:p-6">
+            <p class="break-words text-sm leading-6 text-muted-foreground">Retire cette bibliothèque et son index de Flex. Les fichiers présents dans {{ library.path }} ne seront jamais supprimés.</p>
+            <Button class="mt-5 w-full sm:w-auto" variant="secondary" :disabled="deleteMutation.isPending.value" @click="confirmDelete"><Trash2 />Supprimer la bibliothèque</Button>
           </CardContent>
         </Card>
       </template>
-      <div v-else class="grid min-h-96 place-items-center text-muted-foreground">Bibliothèque introuvable.</div>
+      <Empty v-else class="mt-10 min-h-96 border border-white/10">
+        <EmptyHeader><EmptyMedia variant="icon"><CircleAlert /></EmptyMedia><EmptyTitle>Bibliothèque introuvable</EmptyTitle><EmptyDescription>Cette bibliothèque n’existe plus ou n’est plus accessible.</EmptyDescription></EmptyHeader>
+      </Empty>
     </div>
   </section>
 </template>

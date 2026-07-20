@@ -17,7 +17,7 @@ import (
 )
 
 type fakeLibraryService struct{}
-type fakeMediaService struct{}
+type fakeMediaService struct{ favorites []media.File }
 type fakePlaybackService struct{}
 type fakeScanService struct{}
 
@@ -30,12 +30,18 @@ func (fakeLibraryService) Update(context.Context, string, string, string) (libra
 }
 func (fakeLibraryService) Delete(context.Context, string) error             { return nil }
 func (fakeMediaService) List(context.Context, string) ([]media.File, error) { return nil, nil }
+func (service fakeMediaService) Favorites(context.Context) ([]media.File, error) {
+	return service.favorites, nil
+}
 func (fakeMediaService) Get(context.Context, string) (media.File, error) {
 	return media.File{}, media.ErrNotFound
 }
 func (fakeMediaService) Home(context.Context) (media.Home, error) { return media.Home{}, nil }
 func (fakeMediaService) Search(context.Context, string) ([]media.SearchResult, error) {
 	return nil, nil
+}
+func (fakeMediaService) UpdateMetadata(context.Context, string, media.MetadataInput) (media.File, error) {
+	return media.File{}, nil
 }
 func (fakeScanService) Scan(context.Context, string) (media.ScanResult, error) {
 	return media.ScanResult{}, nil
@@ -71,5 +77,27 @@ func TestHealth(t *testing.T) {
 	}
 	if body.Status != "ok" || body.Service != "flex" {
 		t.Fatalf("unexpected response: %#v", body)
+	}
+}
+
+func TestFavorites(t *testing.T) {
+	service := fakeMediaService{favorites: []media.File{{
+		ID: "media-1", LibraryID: "library-1", Filename: "video.mp4", Title: "Ma vidéo", Favorite: true,
+	}}}
+	server := New(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fakeLibraryService{}, service, fakeScanService{}, fakePlaybackService{})
+	request := httptest.NewRequest(http.MethodGet, "/api/favorites", nil)
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", response.Code)
+	}
+	var body mediaListResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if len(body.Items) != 1 || body.Items[0].ID != "media-1" || !body.Items[0].Favorite {
+		t.Fatalf("unexpected favorites response: %#v", body)
 	}
 }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Flex API
-  version: 0.1.0
+  version: 0.2.0
   description: API du serveur multimédia personnel Flex.
 servers:
   - url: /api
@@ -92,6 +92,16 @@ paths:
                 $ref: "#/components/schemas/ScanResult"
         "404":
           description: Bibliothèque introuvable.
+    get:
+      operationId: getLibraryScanStatus
+      summary: Retourne l'état de l'analyse d'une bibliothèque.
+      responses:
+        "200":
+          description: État actuel de l'analyse.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanStatus"
   /libraries/{libraryId}:
     parameters:
       - $ref: "#/components/parameters/LibraryId"
@@ -156,6 +166,61 @@ paths:
                 $ref: "#/components/schemas/MediaFile"
         "404":
           description: Vidéo introuvable.
+    patch:
+      operationId: updateMedia
+      summary: Modifie les métadonnées personnelles d'une vidéo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMediaRequest"
+      responses:
+        "200":
+          description: Métadonnées enregistrées.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaFile"
+        "404":
+          description: Vidéo introuvable.
+        "422":
+          description: Métadonnées invalides.
+  /favorites:
+    get:
+      operationId: listFavorites
+      summary: Liste toutes les vidéos favorites.
+      responses:
+        "200":
+          description: Liste des vidéos favorites.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaList"
+  /search:
+    get:
+      operationId: searchMedia
+      summary: Recherche des vidéos par titre ou nom de fichier.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Résultats de la recherche.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaSearchResult"
   /media/{mediaId}/thumbnail:
     parameters:
       - $ref: "#/components/parameters/MediaId"
@@ -322,10 +387,31 @@ components:
         skipped:
           type: integer
           minimum: 0
-    MediaFile:
+    ScanStatus:
       type: object
       additionalProperties: false
-      required: [id, libraryId, filename, sizeBytes, durationMs, width, height, container, videoCodec, audioCodec, modifiedAt, progressMs, completed]
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [idle, scanning]
+        startedAt:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+    MediaList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MediaFile"
+    MediaFile:
+      type: object
+      required: [id, libraryId, filename, sizeBytes, durationMs, width, height, container, videoCodec, audioCodec, modifiedAt, progressMs, completed, title, description, recordedAt, favorite]
       properties:
         id:
           type: string
@@ -357,6 +443,44 @@ components:
           format: int64
           minimum: 0
         completed:
+          type: boolean
+        title:
+          type: string
+        description:
+          type: string
+        recordedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        favorite:
+          type: boolean
+    MediaSearchResult:
+      allOf:
+        - $ref: "#/components/schemas/MediaFile"
+        - type: object
+          required: [libraryName]
+          properties:
+            libraryName:
+              type: string
+    UpdateMediaRequest:
+      type: object
+      additionalProperties: false
+      required: [title, description, recordedAt, favorite]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        recordedAt:
+          oneOf:
+            - type: string
+              format: date
+            - type: "null"
+        favorite:
           type: boolean
     PlaybackInfo:
       type: object

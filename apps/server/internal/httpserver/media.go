@@ -15,19 +15,30 @@ import (
 )
 
 type mediaResponse struct {
-	ID         string    `json:"id"`
-	LibraryID  string    `json:"libraryId"`
-	Filename   string    `json:"filename"`
-	SizeBytes  int64     `json:"sizeBytes"`
-	DurationMS int64     `json:"durationMs"`
-	Width      int       `json:"width"`
-	Height     int       `json:"height"`
-	Container  string    `json:"container"`
-	VideoCodec string    `json:"videoCodec"`
-	AudioCodec string    `json:"audioCodec"`
-	ModifiedAt time.Time `json:"modifiedAt"`
-	ProgressMS int64     `json:"progressMs"`
-	Completed  bool      `json:"completed"`
+	ID          string     `json:"id"`
+	LibraryID   string     `json:"libraryId"`
+	Filename    string     `json:"filename"`
+	SizeBytes   int64      `json:"sizeBytes"`
+	DurationMS  int64      `json:"durationMs"`
+	Width       int        `json:"width"`
+	Height      int        `json:"height"`
+	Container   string     `json:"container"`
+	VideoCodec  string     `json:"videoCodec"`
+	AudioCodec  string     `json:"audioCodec"`
+	ModifiedAt  time.Time  `json:"modifiedAt"`
+	ProgressMS  int64      `json:"progressMs"`
+	Completed   bool       `json:"completed"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	RecordedAt  *time.Time `json:"recordedAt"`
+	Favorite    bool       `json:"favorite"`
+}
+
+type updateMediaRequest struct {
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	RecordedAt  *string `json:"recordedAt"`
+	Favorite    bool    `json:"favorite"`
 }
 
 type mediaListResponse struct {
@@ -70,6 +81,23 @@ func listMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFun
 		if err != nil {
 			logger.Error("list media", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger les vidéos")
+			return
+		}
+		payload := mediaListResponse{Items: make([]mediaResponse, 0, len(items))}
+		for _, item := range items {
+			payload.Items = append(payload.Items, mediaToResponse(item))
+		}
+		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(response).Encode(payload)
+	}
+}
+
+func favoritesHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		items, err := service.Favorites(request.Context())
+		if err != nil {
+			logger.Error("list favorite media", "error", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger les favoris")
 			return
 		}
 		payload := mediaListResponse{Items: make([]mediaResponse, 0, len(items))}
@@ -135,6 +163,42 @@ func getMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFunc
 		}
 		response.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(response).Encode(mediaToResponse(item))
+	}
+}
+
+func updateMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		var input updateMediaRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_request", "La requête est invalide")
+			return
+		}
+		var recordedAt *time.Time
+		if input.RecordedAt != nil && *input.RecordedAt != "" {
+			parsed, err := time.Parse("2006-01-02", *input.RecordedAt)
+			if err != nil {
+				writeError(response, http.StatusUnprocessableEntity, "invalid_recorded_at", "La date d'enregistrement est invalide")
+				return
+			}
+			recordedAt = &parsed
+		}
+		updated, err := service.UpdateMetadata(request.Context(), request.PathValue("mediaID"), media.MetadataInput{
+			Title: input.Title, Description: input.Description, RecordedAt: recordedAt, Favorite: input.Favorite,
+		})
+		switch {
+		case errors.Is(err, media.ErrNotFound):
+			writeError(response, http.StatusNotFound, "media_not_found", "La vidéo n'existe pas")
+		case errors.Is(err, media.ErrInvalidTitle):
+			writeError(response, http.StatusUnprocessableEntity, "invalid_title", "Le titre est requis et doit contenir moins de 200 caractères")
+		case err != nil:
+			logger.Error("update media metadata", "error", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de modifier la vidéo")
+		default:
+			response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(response).Encode(mediaToResponse(updated))
+		}
 	}
 }
 
@@ -292,5 +356,6 @@ func mediaToResponse(item media.File) mediaResponse {
 		DurationMS: item.DurationMS, Width: item.Width, Height: item.Height, Container: item.Container,
 		VideoCodec: item.VideoCodec, AudioCodec: item.AudioCodec, ModifiedAt: item.ModifiedAt,
 		ProgressMS: item.ProgressMS, Completed: item.Completed,
+		Title: item.Title, Description: item.Description, RecordedAt: item.RecordedAt, Favorite: item.Favorite,
 	}
 }

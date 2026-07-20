@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { toTypedSchema } from '@vee-validate/zod'
-import { Film, Folder, FolderPlus, LoaderCircle, X } from '@lucide/vue'
+import { CircleAlert, Film, Folder, FolderPlus, LoaderCircle, X } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useForm } from 'vee-validate'
+import { toast } from 'vue-sonner'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { ApiError, createLibrary, getLibraries } from '@/lib/api/libraries'
 import { asForwardedProps } from '@/lib/utils'
@@ -36,11 +38,16 @@ const createMutation = useMutation({
     await queryClient.invalidateQueries({ queryKey: ['libraries'] })
     isDialogOpen.value = false
     libraryForm.resetForm({ values: { name: 'Mes vidéos', path: '/media' } })
+    toast.success('Bibliothèque ajoutée')
   },
   onError: (error) => {
-    if (!(error instanceof ApiError)) return
+    if (!(error instanceof ApiError)) {
+      toast.error(error instanceof Error ? error.message : 'Impossible d’ajouter la bibliothèque')
+      return
+    }
     if (error.code === 'invalid_name') libraryForm.setFieldError('name', error.message)
     if (error.code === 'invalid_path' || error.code === 'path_conflict') libraryForm.setFieldError('path', error.message)
+    if (!['invalid_name', 'invalid_path', 'path_conflict'].includes(error.code)) toast.error(error.message)
   },
 })
 
@@ -69,8 +76,8 @@ const submit = libraryForm.handleSubmit((values) => {
 <template>
   <section class="relative min-h-[calc(100dvh-4rem)] overflow-hidden">
     <div class="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_at_top,rgba(124,58,237,0.10),transparent_68%)]" />
-    <div class="relative mx-auto max-w-[1600px] px-5 py-10 lg:px-10 lg:py-14">
-      <div class="flex items-end justify-between gap-6">
+    <div class="relative mx-auto max-w-[1600px] px-4 py-8 sm:px-5 sm:py-10 lg:px-10 lg:py-14">
+      <div class="flex flex-col items-start gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div>
           <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Bibliothèques</h1>
           <p class="mt-2 text-sm text-muted-foreground">Choisissez une bibliothèque pour parcourir ses vidéos.</p>
@@ -81,31 +88,17 @@ const submit = libraryForm.handleSubmit((values) => {
         </Button>
       </div>
 
-      <div v-if="librariesQuery.isPending.value" class="grid min-h-[520px] place-items-center">
+      <div v-if="librariesQuery.isPending.value" class="grid min-h-130 place-items-center">
         <LoaderCircle class="size-7 animate-spin text-primary" aria-label="Chargement" />
       </div>
-      <div v-else-if="librariesQuery.isError.value" class="mt-10 grid min-h-[420px] place-items-center rounded-3xl border border-red-400/15 bg-red-400/[0.025] px-6 text-center">
-        <div>
-          <p class="font-semibold">Impossible de charger les bibliothèques</p>
-          <Button class="mt-5" variant="secondary" @click="librariesQuery.refetch()">Réessayer</Button>
-        </div>
-      </div>
-      <div v-else-if="librariesQuery.data.value?.length === 0" class="mt-10 grid min-h-[520px] place-items-center rounded-3xl border border-dashed border-white/12 bg-white/[0.018] px-6 py-16">
-        <div class="max-w-md text-center">
-          <div class="relative mx-auto grid size-20 place-items-center">
-            <div class="absolute inset-0 rounded-3xl bg-primary/15 blur-xl" />
-            <div class="relative grid size-20 place-items-center rounded-3xl border border-white/10 bg-card shadow-2xl shadow-black/30">
-              <Film class="size-9 text-primary" />
-            </div>
-          </div>
-          <h2 class="mt-7 text-xl font-semibold tracking-tight">Votre bibliothèque est vide</h2>
-          <p class="mt-3 text-sm leading-6 text-muted-foreground">Ajoutez le dossier contenant vos vidéos pour commencer.</p>
-          <Button class="mt-7" size="lg" @click="openDialog">
-            <FolderPlus />
-            Ajouter une bibliothèque
-          </Button>
-        </div>
-      </div>
+      <Empty v-else-if="librariesQuery.isError.value" class="mt-10 min-h-105 border border-red-400/15 bg-red-400/2.5">
+        <EmptyHeader><EmptyMedia variant="icon"><CircleAlert /></EmptyMedia><EmptyTitle>Impossible de charger les bibliothèques</EmptyTitle><EmptyDescription>Une erreur est survenue pendant le chargement.</EmptyDescription></EmptyHeader>
+        <EmptyContent><Button variant="secondary" @click="librariesQuery.refetch()">Réessayer</Button></EmptyContent>
+      </Empty>
+      <Empty v-else-if="librariesQuery.data.value?.length === 0" class="mt-10 min-h-130 border border-white/12 bg-white/[0.018]">
+        <EmptyHeader><EmptyMedia variant="icon" class="size-16 rounded-2xl text-primary"><Film class="size-8" /></EmptyMedia><EmptyTitle>Votre bibliothèque est vide</EmptyTitle><EmptyDescription>Ajoutez le dossier contenant vos vidéos pour commencer.</EmptyDescription></EmptyHeader>
+        <EmptyContent><Button size="lg" @click="openDialog"><FolderPlus />Ajouter une bibliothèque</Button></EmptyContent>
+      </Empty>
       <div v-else class="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <RouterLink v-for="library in librariesQuery.data.value" :key="library.id" :to="{ name: 'library', params: { libraryId: library.id } }" class="group block">
           <Card class="gap-0 rounded-2xl border-white/8 bg-card/70 py-0 shadow-none transition group-hover:-translate-y-0.5 group-hover:border-primary/35 group-hover:bg-card">
@@ -123,8 +116,8 @@ const submit = libraryForm.handleSubmit((values) => {
     </div>
 
     <Teleport to="body">
-      <div v-if="isDialogOpen" class="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" @mousedown.self="closeDialog">
-        <section class="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="add-library-title">
+      <div v-if="isDialogOpen" class="fixed inset-0 z-100 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" @mousedown.self="closeDialog">
+        <section class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-zinc-950 p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="add-library-title">
           <div class="flex items-start justify-between gap-4">
             <div>
               <h2 id="add-library-title" class="text-lg font-semibold">Ajouter une bibliothèque</h2>

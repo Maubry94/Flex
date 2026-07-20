@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Film, Menu, Search } from '@lucide/vue'
+import { Film, Heart, Menu, Search } from '@lucide/vue'
 import { nextTick, ref } from 'vue'
 
 import GlobalSearch from '@/components/search/GlobalSearch.vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Toaster } from '@/components/ui/sonner'
 
 const isMobileMenuOpen = ref(false)
 const isSearchOpen = ref(false)
@@ -30,6 +31,7 @@ async function openMobileSearch(): Promise<void> {
         <nav class="hidden items-center gap-1 md:flex" aria-label="Navigation principale">
           <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'home' }">Accueil</RouterLink>
           <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'libraries' }">Bibliothèques</RouterLink>
+          <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'favorites' }">Favoris</RouterLink>
         </nav>
 
         <div class="ml-auto flex items-center gap-1">
@@ -54,6 +56,7 @@ async function openMobileSearch(): Promise<void> {
                 <button type="button" class="flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" @click="openMobileSearch"><Search class="size-4" />Rechercher</button>
                 <RouterLink class="rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'home' }" @click="isMobileMenuOpen = false">Accueil</RouterLink>
                 <RouterLink class="rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'libraries' }" @click="isMobileMenuOpen = false">Bibliothèques</RouterLink>
+                <RouterLink class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'favorites' }" @click="isMobileMenuOpen = false"><Heart class="size-4" />Favoris</RouterLink>
               </nav>
             </SheetContent>
           </Sheet>
@@ -65,5 +68,6 @@ async function openMobileSearch(): Promise<void> {
       <RouterView />
     </main>
     <GlobalSearch v-model:open="isSearchOpen" />
+    <Toaster position="bottom-right" rich-colors close-button />
   </div>
 </template>

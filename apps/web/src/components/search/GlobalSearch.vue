@@ -5,8 +5,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { CommandDialog, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { searchMedia, thumbnailURL } from '@/lib/api/media'
-import { mediaTitle } from '@/lib/media-title'
 
 const open = defineModel<boolean>('open', { required: true })
 const router = useRouter()
@@ -72,10 +72,16 @@ onBeforeUnmount(() => {
   <CommandDialog v-model:open="open" title="Rechercher" description="Recherchez une vidéo dans toutes vos bibliothèques">
     <CommandInput :model-value="input" placeholder="Rechercher une vidéo…" @update:model-value="updateInput" />
     <CommandList class="max-h-[min(60dvh,32rem)]">
-      <div v-if="input.trim().length < 2" class="px-6 py-10 text-center text-sm text-muted-foreground">Saisissez au moins deux caractères.</div>
+      <Empty v-if="input.trim().length < 2" class="min-h-32 border-0 p-6 md:p-6">
+        <EmptyHeader><EmptyMedia variant="icon"><Film /></EmptyMedia><EmptyTitle class="text-sm">Rechercher une vidéo</EmptyTitle><EmptyDescription>Saisissez au moins deux caractères.</EmptyDescription></EmptyHeader>
+      </Empty>
       <div v-else-if="searchQuery.isPending.value" class="grid min-h-28 place-items-center"><LoaderCircle class="size-5 animate-spin text-primary" /></div>
-      <div v-else-if="searchQuery.isError.value" class="px-6 py-10 text-center text-sm text-red-300">La recherche a échoué.</div>
-      <div v-else-if="searchQuery.data.value?.length === 0" class="px-6 py-10 text-center text-sm text-muted-foreground">Aucune vidéo trouvée.</div>
+      <Empty v-else-if="searchQuery.isError.value" class="min-h-32 border-0 p-6 md:p-6">
+        <EmptyHeader><EmptyTitle class="text-sm">La recherche a échoué</EmptyTitle><EmptyDescription>Réessayez dans quelques instants.</EmptyDescription></EmptyHeader>
+      </Empty>
+      <Empty v-else-if="searchQuery.data.value?.length === 0" class="min-h-32 border-0 p-6 md:p-6">
+        <EmptyHeader><EmptyTitle class="text-sm">Aucune vidéo trouvée</EmptyTitle><EmptyDescription>Essayez avec un autre titre.</EmptyDescription></EmptyHeader>
+      </Empty>
       <CommandGroup v-else heading="Vidéos" class="p-2">
         <CommandItem v-for="item in searchQuery.data.value" :key="item.id" :value="item.id" class="gap-3 rounded-xl p-2" @select="selectMedia(item.id)">
           <div class="relative grid aspect-video w-20 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted">
@@ -83,7 +89,7 @@ onBeforeUnmount(() => {
             <img :src="thumbnailURL(item.id)" alt="" class="absolute inset-0 size-full object-cover" />
           </div>
           <div class="min-w-0 flex-1">
-            <p class="truncate font-medium">{{ mediaTitle(item.filename) }}</p>
+            <p class="truncate font-medium">{{ item.title }}</p>
             <p class="mt-1 truncate text-xs text-muted-foreground">{{ item.libraryName }} · {{ formatDuration(item.durationMs) }}</p>
           </div>
         </CommandItem>

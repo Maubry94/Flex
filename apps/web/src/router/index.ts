@@ -5,6 +5,7 @@ import LibraryView from '@/views/LibraryView.vue'
 import VideoView from '@/views/VideoView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LibrarySettingsView from '@/views/LibrarySettingsView.vue'
+import FavoritesView from '@/views/FavoritesView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,6 +19,11 @@ export const router = createRouter({
       path: '/libraries',
       name: 'libraries',
       component: LibrariesView,
+    },
+    {
+      path: '/favorites',
+      name: 'favorites',
+      component: FavoritesView,
     },
     {
       path: '/libraries/:libraryId',

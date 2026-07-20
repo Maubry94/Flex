@@ -73,6 +73,16 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		ALTER TABLE libraries ADD COLUMN last_scan_indexed INTEGER NOT NULL DEFAULT 0;
 		ALTER TABLE libraries ADD COLUMN last_scan_skipped INTEGER NOT NULL DEFAULT 0;
 		`,
+		`
+		CREATE TABLE media_metadata (
+			media_id TEXT PRIMARY KEY REFERENCES media_files(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			recorded_at TEXT,
+			favorite INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL
+		);
+		`,
 	}
 
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {
