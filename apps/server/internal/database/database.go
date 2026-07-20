@@ -113,6 +113,67 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		`
 		ALTER TABLE libraries ADD COLUMN last_scan_unchanged INTEGER NOT NULL DEFAULT 0;
 		`,
+		`
+		CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			display_name TEXT NOT NULL,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+			active INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE sessions (
+			token_hash TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_at TEXT NOT NULL,
+			expires_at TEXT NOT NULL
+		);
+		CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+		CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
+		`,
+		`
+		CREATE TABLE user_media_state (
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+			favorite INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, media_id)
+		);
+		CREATE INDEX idx_user_media_state_favorites ON user_media_state(user_id, favorite);
+		INSERT INTO user_media_state (user_id, media_id, favorite, updated_at)
+		SELECT (SELECT id FROM users ORDER BY created_at LIMIT 1), media_id, favorite, updated_at
+		FROM media_metadata
+		WHERE favorite = 1 AND EXISTS (SELECT 1 FROM users);
+		INSERT OR IGNORE INTO playback_progress (profile_id, media_id, position_ms, duration_ms, completed, updated_at)
+		SELECT (SELECT id FROM users ORDER BY created_at LIMIT 1), media_id, position_ms, duration_ms, completed, updated_at
+		FROM playback_progress
+		WHERE profile_id = 'local' AND EXISTS (SELECT 1 FROM users);
+		`,
+		`
+		CREATE TABLE collections_v2 (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			name TEXT NOT NULL COLLATE NOCASE,
+			created_at TEXT NOT NULL,
+			UNIQUE (user_id, name)
+		);
+		INSERT INTO collections_v2 (id, user_id, name, created_at)
+		SELECT id, COALESCE((SELECT id FROM users ORDER BY created_at LIMIT 1), 'local'), name, created_at FROM collections;
+		CREATE TABLE collection_media_v2 (
+			collection_id TEXT NOT NULL REFERENCES collections_v2(id) ON DELETE CASCADE,
+			media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+			PRIMARY KEY (collection_id, media_id)
+		);
+		INSERT INTO collection_media_v2 (collection_id, media_id) SELECT collection_id, media_id FROM collection_media;
+		DROP TABLE collection_media;
+		DROP TABLE collections;
+		ALTER TABLE collections_v2 RENAME TO collections;
+		ALTER TABLE collection_media_v2 RENAME TO collection_media;
+		CREATE INDEX idx_collections_user_id ON collections(user_id);
+		CREATE INDEX idx_collection_media_media_id ON collection_media(media_id);
+		`,
 	}
 
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {

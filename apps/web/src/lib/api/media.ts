@@ -132,7 +132,7 @@ function isMediaSearchResult(value: unknown): value is MediaSearchResult {
 
 export async function getMedia(libraryId: string, signal?: AbortSignal): Promise<MediaFile[]> {
   const query = new URLSearchParams({ libraryId })
-  const response = await fetch(`/api/media?${query.toString()}`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/media?${query.toString()}`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger les vidéos')
 
   const body: unknown = await response.json()
@@ -143,7 +143,7 @@ export async function getMedia(libraryId: string, signal?: AbortSignal): Promise
 }
 
 export async function getFavorites(signal?: AbortSignal): Promise<MediaFile[]> {
-  const response = await fetch('/api/favorites', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/favorites', signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger les favoris')
   const body: unknown = await response.json()
   if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isMediaFile)) {
@@ -153,7 +153,7 @@ export async function getFavorites(signal?: AbortSignal): Promise<MediaFile[]> {
 }
 
 export async function getMediaByID(mediaId: string, signal?: AbortSignal): Promise<MediaFile> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger la vidéo')
 
   const body: unknown = await response.json()
@@ -162,7 +162,7 @@ export async function getMediaByID(mediaId: string, signal?: AbortSignal): Promi
 }
 
 export async function updateMedia(mediaId: string, input: UpdateMediaInput): Promise<MediaFile> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, {
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -170,6 +170,18 @@ export async function updateMedia(mediaId: string, input: UpdateMediaInput): Pro
   if (!response.ok) throw new Error('Impossible de modifier la vidéo')
   const body: unknown = await response.json()
   if (!isMediaFile(body)) throw new Error('La réponse de modification est invalide')
+  return body
+}
+
+export async function setMediaFavorite(mediaId: string, favorite: boolean): Promise<MediaFile> {
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/favorite`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ favorite }),
+  })
+  if (!response.ok) throw new Error('Impossible de modifier le favori')
+  const body: unknown = await response.json()
+  if (!isMediaFile(body)) throw new Error('La réponse vidéo est invalide')
   return body
 }
 
@@ -182,7 +194,7 @@ export function streamURL(mediaId: string): string {
 }
 
 export async function getPlayback(mediaId: string, signal?: AbortSignal): Promise<PlaybackInfo> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}/playback`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/playback`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de préparer la lecture')
 
   const body: unknown = await response.json()
@@ -191,7 +203,7 @@ export async function getPlayback(mediaId: string, signal?: AbortSignal): Promis
 }
 
 export async function getHomeMedia(signal?: AbortSignal): Promise<HomeMedia> {
-  const response = await fetch('/api/home', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/home', signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error("Impossible de charger l'accueil")
   const body: unknown = await response.json()
   if (!isHomeMedia(body)) throw new Error("La réponse de l'accueil est invalide")
@@ -200,7 +212,7 @@ export async function getHomeMedia(signal?: AbortSignal): Promise<HomeMedia> {
 
 export async function searchMedia(query: string, signal?: AbortSignal): Promise<MediaSearchResult[]> {
   const parameters = new URLSearchParams({ q: query })
-  const response = await fetch(`/api/search?${parameters.toString()}`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/search?${parameters.toString()}`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('La recherche a échoué')
   const body: unknown = await response.json()
   if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isMediaSearchResult)) {
@@ -211,7 +223,7 @@ export async function searchMedia(query: string, signal?: AbortSignal): Promise<
 
 
 export async function scanLibrary(libraryId: string): Promise<ScanResult> {
-  const response = await fetch(`/api/libraries/${encodeURIComponent(libraryId)}/scan`, { method: 'POST' })
+  const response = await apiFetch(`/api/libraries/${encodeURIComponent(libraryId)}/scan`, { method: 'POST' })
   if (!response.ok) throw new Error("L'analyse de la bibliothèque a échoué")
 
   const body: unknown = await response.json()
@@ -220,7 +232,7 @@ export async function scanLibrary(libraryId: string): Promise<ScanResult> {
 }
 
 export async function getScanStatus(libraryId: string, signal?: AbortSignal): Promise<ScanStatus> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/libraries/${encodeURIComponent(libraryId)}/scan`,
     signal === undefined ? undefined : { signal },
   )
@@ -230,3 +242,4 @@ export async function getScanStatus(libraryId: string, signal?: AbortSignal): Pr
   if (!isScanStatus(body)) throw new Error("La réponse d'état de l'analyse est invalide")
   return body
 }
+import { apiFetch } from './client'

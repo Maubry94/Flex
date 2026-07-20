@@ -28,7 +28,7 @@ type mediaIDsResponse struct {
 
 func listCollectionsHandler(service collectionService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := service.List(r.Context())
+		items, err := service.List(r.Context(), currentUser(r).ID)
 		writeCollections(w, items, err, logger)
 	}
 }
@@ -41,7 +41,7 @@ func createCollectionHandler(service collectionService, logger *slog.Logger) htt
 			writeError(w, 400, "invalid_request", "La requête est invalide")
 			return
 		}
-		item, err := service.Create(r.Context(), input.Name)
+		item, err := service.Create(r.Context(), currentUser(r).ID, input.Name)
 		if errors.Is(err, collection.ErrInvalid) {
 			writeError(w, 422, "invalid_collection", "Le nom est invalide")
 			return
@@ -69,7 +69,7 @@ func updateCollectionHandler(service collectionService, logger *slog.Logger) htt
 			writeError(w, 400, "invalid_request", "La requête est invalide")
 			return
 		}
-		item, err := service.Update(r.Context(), r.PathValue("collectionID"), input.Name)
+		item, err := service.Update(r.Context(), currentUser(r).ID, r.PathValue("collectionID"), input.Name)
 		if writeCollectionError(w, err, logger) {
 			return
 		}
@@ -79,7 +79,7 @@ func updateCollectionHandler(service collectionService, logger *slog.Logger) htt
 }
 func deleteCollectionHandler(service collectionService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if writeCollectionError(w, service.Delete(r.Context(), r.PathValue("collectionID")), logger) {
+		if writeCollectionError(w, service.Delete(r.Context(), currentUser(r).ID, r.PathValue("collectionID")), logger) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -87,7 +87,7 @@ func deleteCollectionHandler(service collectionService, logger *slog.Logger) htt
 }
 func removeCollectionMediaHandler(service collectionService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if writeCollectionError(w, service.RemoveMedia(r.Context(), r.PathValue("collectionID"), r.PathValue("mediaID")), logger) {
+		if writeCollectionError(w, service.RemoveMedia(r.Context(), currentUser(r).ID, r.PathValue("collectionID"), r.PathValue("mediaID")), logger) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -95,7 +95,7 @@ func removeCollectionMediaHandler(service collectionService, logger *slog.Logger
 }
 func listMediaCollectionsHandler(service collectionService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := service.ListForMedia(r.Context(), r.PathValue("mediaID"))
+		items, err := service.ListForMedia(r.Context(), currentUser(r).ID, r.PathValue("mediaID"))
 		writeCollections(w, items, err, logger)
 	}
 }
@@ -106,13 +106,13 @@ func setMediaCollectionsHandler(service collectionService, logger *slog.Logger) 
 			writeError(w, 400, "invalid_request", "La requête est invalide")
 			return
 		}
-		items, err := service.SetForMedia(r.Context(), r.PathValue("mediaID"), input.CollectionIDs)
+		items, err := service.SetForMedia(r.Context(), currentUser(r).ID, r.PathValue("mediaID"), input.CollectionIDs)
 		writeCollections(w, items, err, logger)
 	}
 }
 func collectionMediaHandler(service collectionService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ids, err := service.MediaIDs(r.Context(), r.PathValue("collectionID"))
+		ids, err := service.MediaIDs(r.Context(), currentUser(r).ID, r.PathValue("collectionID"))
 		if err != nil {
 			logger.Error("list collection media", "error", err)
 			writeError(w, 500, "internal_error", "Impossible de charger la collection")

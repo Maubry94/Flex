@@ -104,13 +104,14 @@ type LibrarySource interface {
 }
 
 type Repository interface {
-	List(ctx context.Context, libraryID string) ([]File, error)
-	Favorites(ctx context.Context) ([]File, error)
-	Get(ctx context.Context, id string) (File, error)
-	Home(ctx context.Context, limit int) (Home, error)
-	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
+	List(ctx context.Context, userID string, libraryID string) ([]File, error)
+	Favorites(ctx context.Context, userID string) ([]File, error)
+	Get(ctx context.Context, userID string, id string) (File, error)
+	Home(ctx context.Context, userID string, limit int) (Home, error)
+	Search(ctx context.Context, userID string, query string, limit int) ([]SearchResult, error)
 	Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error)
-	UpdateMetadata(ctx context.Context, id string, input MetadataInput) error
+	UpdateMetadata(ctx context.Context, userID string, id string, input MetadataInput) error
+	SetFavorite(ctx context.Context, userID string, id string, favorite bool) error
 	Upsert(ctx context.Context, file File) error
 	DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) (int, error)
 }
@@ -129,31 +130,31 @@ func NewScanner(libraries LibrarySource, repository Repository, probe Probe, thu
 	return &Scanner{libraries: libraries, repository: repository, probe: probe, thumbnails: thumbnails, transcoder: transcoder, logger: logger, walkDir: filepath.WalkDir}
 }
 
-func (scanner *Scanner) List(ctx context.Context, libraryID string) ([]File, error) {
-	return scanner.repository.List(ctx, libraryID)
+func (scanner *Scanner) List(ctx context.Context, userID string, libraryID string) ([]File, error) {
+	return scanner.repository.List(ctx, userID, libraryID)
 }
 
-func (scanner *Scanner) Favorites(ctx context.Context) ([]File, error) {
-	return scanner.repository.Favorites(ctx)
+func (scanner *Scanner) Favorites(ctx context.Context, userID string) ([]File, error) {
+	return scanner.repository.Favorites(ctx, userID)
 }
 
-func (scanner *Scanner) Get(ctx context.Context, id string) (File, error) {
-	return scanner.repository.Get(ctx, id)
+func (scanner *Scanner) Get(ctx context.Context, userID string, id string) (File, error) {
+	return scanner.repository.Get(ctx, userID, id)
 }
 
-func (scanner *Scanner) Home(ctx context.Context) (Home, error) {
-	return scanner.repository.Home(ctx, 12)
+func (scanner *Scanner) Home(ctx context.Context, userID string) (Home, error) {
+	return scanner.repository.Home(ctx, userID, 12)
 }
 
-func (scanner *Scanner) Search(ctx context.Context, query string) ([]SearchResult, error) {
-	return scanner.repository.Search(ctx, strings.TrimSpace(query), 20)
+func (scanner *Scanner) Search(ctx context.Context, userID string, query string) ([]SearchResult, error) {
+	return scanner.repository.Search(ctx, userID, strings.TrimSpace(query), 20)
 }
 
 func (scanner *Scanner) Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error) {
 	return scanner.repository.Folders(ctx, libraryID)
 }
 
-func (scanner *Scanner) UpdateMetadata(ctx context.Context, id string, input MetadataInput) (File, error) {
+func (scanner *Scanner) UpdateMetadata(ctx context.Context, userID string, id string, input MetadataInput) (File, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
 	if input.Title == "" || len(input.Title) > 200 {
@@ -162,17 +163,27 @@ func (scanner *Scanner) UpdateMetadata(ctx context.Context, id string, input Met
 	if len(input.Description) > 5_000 {
 		return File{}, fmt.Errorf("description is too long")
 	}
-	if _, err := scanner.repository.Get(ctx, id); err != nil {
+	if _, err := scanner.repository.Get(ctx, userID, id); err != nil {
 		return File{}, err
 	}
-	if err := scanner.repository.UpdateMetadata(ctx, id, input); err != nil {
+	if err := scanner.repository.UpdateMetadata(ctx, userID, id, input); err != nil {
 		return File{}, fmt.Errorf("update media metadata: %w", err)
 	}
-	return scanner.repository.Get(ctx, id)
+	return scanner.repository.Get(ctx, userID, id)
+}
+
+func (scanner *Scanner) SetFavorite(ctx context.Context, userID string, id string, favorite bool) (File, error) {
+	if _, err := scanner.repository.Get(ctx, userID, id); err != nil {
+		return File{}, err
+	}
+	if err := scanner.repository.SetFavorite(ctx, userID, id, favorite); err != nil {
+		return File{}, fmt.Errorf("update favorite: %w", err)
+	}
+	return scanner.repository.Get(ctx, userID, id)
 }
 
 func (scanner *Scanner) Thumbnail(ctx context.Context, id string) (string, error) {
-	item, err := scanner.repository.Get(ctx, id)
+	item, err := scanner.repository.Get(ctx, "", id)
 	if err != nil {
 		return "", err
 	}
@@ -180,7 +191,7 @@ func (scanner *Scanner) Thumbnail(ctx context.Context, id string) (string, error
 }
 
 func (scanner *Scanner) Transcode(ctx context.Context, id string) (string, error) {
-	item, err := scanner.repository.Get(ctx, id)
+	item, err := scanner.repository.Get(ctx, "", id)
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +204,7 @@ func (scanner *Scanner) Scan(ctx context.Context, libraryID string) (ScanResult,
 		return ScanResult{}, err
 	}
 
-	indexedFiles, err := scanner.repository.List(ctx, libraryID)
+	indexedFiles, err := scanner.repository.List(ctx, "", libraryID)
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("list indexed media: %w", err)
 	}
@@ -329,32 +340,32 @@ type SQLRepository struct{ db *sql.DB }
 
 func NewSQLRepository(db *sql.DB) *SQLRepository { return &SQLRepository{db: db} }
 
-func (repository *SQLRepository) List(ctx context.Context, libraryID string) ([]File, error) {
-	return repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' LEFT JOIN media_metadata mm ON mm.media_id = m.id WHERE m.library_id = ? ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE`, libraryID)
+func (repository *SQLRepository) List(ctx context.Context, userID string, libraryID string) ([]File, error) {
+	return repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(ums.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id LEFT JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? WHERE m.library_id = ? ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE`, userID, userID, libraryID)
 }
 
-func (repository *SQLRepository) Favorites(ctx context.Context) ([]File, error) {
-	return repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' JOIN media_metadata mm ON mm.media_id = m.id WHERE mm.favorite = 1 ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE`)
+func (repository *SQLRepository) Favorites(ctx context.Context, userID string) ([]File, error) {
+	return repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, ums.favorite FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? AND ums.favorite = 1 ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE`, userID, userID)
 }
 
-func (repository *SQLRepository) Home(ctx context.Context, limit int) (Home, error) {
-	continueWatching, err := repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, p.position_ms, p.completed, COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0) FROM media_files m JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' LEFT JOIN media_metadata mm ON mm.media_id = m.id WHERE p.position_ms > 0 AND p.completed = 0 ORDER BY p.updated_at DESC LIMIT ?`, limit)
+func (repository *SQLRepository) Home(ctx context.Context, userID string, limit int) (Home, error) {
+	continueWatching, err := repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, p.position_ms, p.completed, COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(ums.favorite, 0) FROM media_files m JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id LEFT JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? WHERE p.position_ms > 0 AND p.completed = 0 ORDER BY p.updated_at DESC LIMIT ?`, userID, userID, limit)
 	if err != nil {
 		return Home{}, err
 	}
-	recentlyAdded, err := repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' LEFT JOIN media_metadata mm ON mm.media_id = m.id ORDER BY m.created_at DESC LIMIT ?`, limit)
+	recentlyAdded, err := repository.queryFiles(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(ums.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id LEFT JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? ORDER BY m.created_at DESC LIMIT ?`, userID, userID, limit)
 	if err != nil {
 		return Home{}, err
 	}
 	return Home{ContinueWatching: continueWatching, RecentlyAdded: recentlyAdded}, nil
 }
 
-func (repository *SQLRepository) Search(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+func (repository *SQLRepository) Search(ctx context.Context, userID string, query string, limit int) ([]SearchResult, error) {
 	if query == "" {
 		return []SearchResult{}, nil
 	}
 	pattern := "%" + escapeLike(query) + "%"
-	rows, err := repository.db.QueryContext(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0), l.name FROM media_files m JOIN libraries l ON l.id = m.library_id LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' LEFT JOIN media_metadata mm ON mm.media_id = m.id WHERE COALESCE(NULLIF(mm.title, ''), m.filename) LIKE ? ESCAPE '\' ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE LIMIT ?`, pattern, limit)
+	rows, err := repository.db.QueryContext(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(ums.favorite, 0), l.name FROM media_files m JOIN libraries l ON l.id = m.library_id LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id LEFT JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? WHERE COALESCE(NULLIF(mm.title, ''), m.filename) LIKE ? ESCAPE '\' ORDER BY COALESCE(NULLIF(mm.title, ''), m.filename) COLLATE NOCASE LIMIT ?`, userID, userID, pattern, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search media: %w", err)
 	}
@@ -462,12 +473,12 @@ func (repository *SQLRepository) queryFiles(ctx context.Context, query string, a
 	return items, rows.Err()
 }
 
-func (repository *SQLRepository) Get(ctx context.Context, id string) (File, error) {
+func (repository *SQLRepository) Get(ctx context.Context, userID string, id string) (File, error) {
 	var item File
 	var modifiedAt, createdAt, updatedAt string
 	var completed, favorite int
 	var recordedAt sql.NullString
-	err := repository.db.QueryRowContext(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(mm.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = 'local' LEFT JOIN media_metadata mm ON mm.media_id = m.id WHERE m.id = ?`, id).
+	err := repository.db.QueryRowContext(ctx, `SELECT m.id, m.library_id, m.path, m.filename, m.size_bytes, m.duration_ms, m.width, m.height, m.container, m.video_codec, m.audio_codec, m.modified_at, m.created_at, m.updated_at, COALESCE(p.position_ms, 0), COALESCE(p.completed, 0), COALESCE(mm.title, ''), COALESCE(mm.description, ''), mm.recorded_at, COALESCE(ums.favorite, 0) FROM media_files m LEFT JOIN playback_progress p ON p.media_id = m.id AND p.profile_id = ? LEFT JOIN media_metadata mm ON mm.media_id = m.id LEFT JOIN user_media_state ums ON ums.media_id = m.id AND ums.user_id = ? WHERE m.id = ?`, userID, userID, id).
 		Scan(&item.ID, &item.LibraryID, &item.Path, &item.Filename, &item.SizeBytes, &item.DurationMS, &item.Width, &item.Height, &item.Container, &item.VideoCodec, &item.AudioCodec, &modifiedAt, &createdAt, &updatedAt, &item.ProgressMS, &completed, &item.Title, &item.Description, &recordedAt, &favorite)
 	if errors.Is(err, sql.ErrNoRows) {
 		return File{}, ErrNotFound
@@ -523,12 +534,20 @@ func (repository *SQLRepository) Upsert(ctx context.Context, file File) error {
 	return err
 }
 
-func (repository *SQLRepository) UpdateMetadata(ctx context.Context, id string, input MetadataInput) error {
+func (repository *SQLRepository) UpdateMetadata(ctx context.Context, userID string, id string, input MetadataInput) error {
 	var recordedAt any
 	if input.RecordedAt != nil {
 		recordedAt = input.RecordedAt.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := repository.db.ExecContext(ctx, `INSERT INTO media_metadata (media_id, title, description, recorded_at, favorite, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(media_id) DO UPDATE SET title=excluded.title, description=excluded.description, recorded_at=excluded.recorded_at, favorite=excluded.favorite, updated_at=excluded.updated_at`, id, input.Title, input.Description, recordedAt, input.Favorite, time.Now().UTC().Format(time.RFC3339Nano))
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := repository.db.ExecContext(ctx, `INSERT INTO media_metadata (media_id, title, description, recorded_at, favorite, updated_at) VALUES (?, ?, ?, ?, 0, ?) ON CONFLICT(media_id) DO UPDATE SET title=excluded.title, description=excluded.description, recorded_at=excluded.recorded_at, updated_at=excluded.updated_at`, id, input.Title, input.Description, recordedAt, now); err != nil {
+		return err
+	}
+	return repository.SetFavorite(ctx, userID, id, input.Favorite)
+}
+
+func (repository *SQLRepository) SetFavorite(ctx context.Context, userID string, id string, favorite bool) error {
+	_, err := repository.db.ExecContext(ctx, `INSERT INTO user_media_state (user_id, media_id, favorite, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, media_id) DO UPDATE SET favorite=excluded.favorite, updated_at=excluded.updated_at`, userID, id, favorite, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 

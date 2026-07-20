@@ -39,12 +39,12 @@ async function parseTagList(response: Response): Promise<Tag[]> {
 }
 
 export async function getTags(signal?: AbortSignal): Promise<Tag[]> {
-  const response = await fetch('/api/tags', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/tags', signal === undefined ? undefined : { signal })
   return parseTagList(response)
 }
 
 export async function getTagAssignments(signal?: AbortSignal): Promise<TagAssignment[]> {
-  const response = await fetch('/api/tag-assignments', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/tag-assignments', signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger les attributions de tags')
   const body: unknown = await response.json()
   if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isTagAssignment)) {
@@ -54,7 +54,7 @@ export async function getTagAssignments(signal?: AbortSignal): Promise<TagAssign
 }
 
 export async function createTag(input: CreateTagInput): Promise<Tag> {
-  const response = await fetch('/api/tags', {
+  const response = await apiFetch('/api/tags', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -66,15 +66,16 @@ export async function createTag(input: CreateTagInput): Promise<Tag> {
 }
 
 export async function getMediaTags(mediaId: string, signal?: AbortSignal): Promise<Tag[]> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}/tags`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/tags`, signal === undefined ? undefined : { signal })
   return parseTagList(response)
 }
 
 export async function setMediaTags(mediaId: string, tagIds: string[]): Promise<Tag[]> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}/tags`, {
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/tags`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tagIds }),
   })
   return parseTagList(response)
 }
+import { apiFetch } from './client'

@@ -1,36 +1,36 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Check, CircleCheck, Film, Heart, Pencil, Trash2 } from '@lucide/vue'
+import { Check, CircleCheck, Film, Heart, Layers3, Pencil, Trash2 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 
 import VideoMetadataDialog from '@/components/media/VideoMetadataDialog.vue'
+import MediaCollectionsDialog from '@/components/media/MediaCollectionsDialog.vue'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Progress } from '@/components/ui/progress'
 import type { MediaFile } from '@/lib/api/media'
-import { thumbnailURL, updateMedia } from '@/lib/api/media'
+import { setMediaFavorite, thumbnailURL } from '@/lib/api/media'
 import { saveProgress } from '@/lib/api/progress'
 import { getTagAssignments } from '@/lib/api/tags'
+import { getAuthStatus } from '@/lib/api/auth'
 
 const props = withDefaults(defineProps<{ item: MediaFile, selectable?: boolean, selected?: boolean, removableFromCollection?: boolean }>(), { selectable: false, selected: false, removableFromCollection: false })
 const emit = defineEmits<{ select: [selected: boolean], removeFromCollection: [] }>()
 const queryClient = useQueryClient()
 const isMetadataDialogOpen = ref(false)
+const isCollectionsDialogOpen = ref(false)
+const authQuery = useQuery({ queryKey: ['auth-status'], queryFn: ({ signal }) => getAuthStatus(signal) })
+const canEditMetadata = computed(() => authQuery.data.value?.user?.role === 'admin')
 const assignmentsQuery = useQuery({ queryKey: ['tag-assignments'], queryFn: ({ signal }) => getTagAssignments(signal) })
 const itemTags = computed(() => (assignmentsQuery.data.value ?? [])
   .filter((assignment) => assignment.mediaId === props.item.id)
   .map((assignment) => assignment.tag))
 
 const favoriteMutation = useMutation({
-  mutationFn: () => updateMedia(props.item.id, {
-    title: props.item.title,
-    description: props.item.description,
-    recordedAt: props.item.recordedAt?.slice(0, 10) ?? null,
-    favorite: !props.item.favorite,
-  }),
+  mutationFn: () => setMediaFavorite(props.item.id, !props.item.favorite),
   onSuccess: (item) => {
     applyUpdatedMedia(item)
     toast.success(item.favorite ? 'Ajoutée aux favoris' : 'Retirée des favoris')
@@ -121,11 +121,11 @@ function handleCardClick(event: MouseEvent): void {
       </RouterLink>
     </ContextMenuTrigger>
     <ContextMenuContent class="w-56">
-      <ContextMenuItem @select="isMetadataDialogOpen = true">
+      <ContextMenuItem v-if="canEditMetadata" @select="isMetadataDialogOpen = true">
         <Pencil />
         Modifier les informations
       </ContextMenuItem>
-      <ContextMenuSeparator />
+      <ContextMenuSeparator v-if="canEditMetadata" />
       <ContextMenuItem :disabled="favoriteMutation.isPending.value" @select="favoriteMutation.mutate()">
         <Heart :class="item.favorite && 'fill-current text-primary'" />
         {{ item.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris' }}
@@ -133,6 +133,10 @@ function handleCardClick(event: MouseEvent): void {
       <ContextMenuItem :disabled="watchedMutation.isPending.value" @select="watchedMutation.mutate()">
         <CircleCheck :class="item.completed && 'text-emerald-400'" />
         {{ item.completed ? 'Marquer comme non vue' : 'Marquer comme vue' }}
+      </ContextMenuItem>
+      <ContextMenuItem @select="isCollectionsDialogOpen = true">
+        <Layers3 />
+        Ajouter à une collection
       </ContextMenuItem>
       <template v-if="removableFromCollection">
         <ContextMenuSeparator />
@@ -144,4 +148,5 @@ function handleCardClick(event: MouseEvent): void {
     </ContextMenuContent>
   </ContextMenu>
   <VideoMetadataDialog v-model:open="isMetadataDialogOpen" :item="item" @saved="applyUpdatedMedia" />
+  <MediaCollectionsDialog v-model:open="isCollectionsDialogOpen" :media-id="item.id" />
 </template>

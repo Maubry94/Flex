@@ -39,10 +39,13 @@ func TestOpenMigratesExistingDatabaseWithoutLosingLibraries(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO libraries (id, name, path, created_at) VALUES ('library-1', 'Vidéos', '/media/videos', '2026-07-20T00:00:00Z')`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`DROP TABLE sessions; DROP TABLE users; DELETE FROM schema_migrations WHERE version = 7`); err != nil {
+		t.Fatalf("remove authentication schema: %v", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE libraries DROP COLUMN last_scan_unchanged`); err != nil {
 		t.Fatalf("prepare previous schema: %v", err)
 	}
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)`); err != nil {
+	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version = 6`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {

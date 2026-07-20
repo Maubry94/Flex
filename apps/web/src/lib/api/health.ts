@@ -11,7 +11,7 @@ function isHealthResponse(value: unknown): value is HealthResponse {
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await fetch('/api/health', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/health', signal === undefined ? undefined : { signal })
   if (!response.ok) {
     throw new Error(`Le serveur a répondu avec le statut ${String(response.status)}`)
   }
@@ -22,3 +22,4 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   }
   return body
 }
+import { apiFetch } from './client'

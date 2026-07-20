@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const localProfileID = "local"
-
 type Progress struct {
 	MediaID    string
 	PositionMS int64
@@ -27,11 +25,11 @@ type Service struct{ repository Repository }
 
 func NewService(repository Repository) *Service { return &Service{repository: repository} }
 
-func (service *Service) Get(ctx context.Context, mediaID string) (Progress, error) {
-	return service.repository.Get(ctx, localProfileID, mediaID)
+func (service *Service) Get(ctx context.Context, userID string, mediaID string) (Progress, error) {
+	return service.repository.Get(ctx, userID, mediaID)
 }
 
-func (service *Service) Save(ctx context.Context, mediaID string, positionMS int64, durationMS int64) (Progress, error) {
+func (service *Service) Save(ctx context.Context, userID string, mediaID string, positionMS int64, durationMS int64) (Progress, error) {
 	if positionMS < 0 {
 		positionMS = 0
 	}
@@ -46,7 +44,7 @@ func (service *Service) Save(ctx context.Context, mediaID string, positionMS int
 		MediaID: mediaID, PositionMS: positionMS, DurationMS: durationMS,
 		Completed: completed, UpdatedAt: time.Now().UTC(),
 	}
-	if err := service.repository.Save(ctx, localProfileID, progress); err != nil {
+	if err := service.repository.Save(ctx, userID, progress); err != nil {
 		return Progress{}, fmt.Errorf("save playback progress: %w", err)
 	}
 	return progress, nil

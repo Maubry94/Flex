@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { MediaFile } from '@/lib/api/media'
 import { updateMedia } from '@/lib/api/media'
-import { getCollections, getMediaCollections, setMediaCollections } from '@/lib/api/collections'
 import type { Tag } from '@/lib/api/tags'
 import { createTag, getMediaTags, getTags, setMediaTags } from '@/lib/api/tags'
 import { asForwardedProps } from '@/lib/utils'
@@ -31,9 +30,6 @@ const tagError = ref('')
 const newTagName = ref('')
 const newTagColor = ref('#7c3aed')
 const selectedTagIDs = ref<string[]>([])
-const selectedCollectionIDs = ref<string[]>([])
-const collectionsQuery = useQuery({ queryKey: ['collections'], queryFn: ({ signal }) => getCollections(signal), enabled: computed(() => open.value) })
-const mediaCollectionsQuery = useQuery({ queryKey: computed(() => ['media-collections', props.item.id]), queryFn: ({ signal }) => getMediaCollections(props.item.id, signal), enabled: computed(() => open.value) })
 
 const tagsQuery = useQuery({
   queryKey: ['tags'],
@@ -60,7 +56,6 @@ watch(open, (isOpen) => {
   tagError.value = ''
   newTagName.value = ''
   selectedTagIDs.value = (mediaTagsQuery.data.value ?? []).map((tag) => tag.id)
-  selectedCollectionIDs.value = (mediaCollectionsQuery.data.value ?? []).map((item) => item.id)
   form.resetForm({ values: {
     title: props.item.title,
     description: props.item.description,
@@ -71,7 +66,6 @@ watch(open, (isOpen) => {
 watch(() => mediaTagsQuery.data.value, (tags) => {
   if (open.value && tags) selectedTagIDs.value = tags.map((tag) => tag.id)
 }, { immediate: true })
-watch(() => mediaCollectionsQuery.data.value, (items) => { if (open.value && items) selectedCollectionIDs.value = items.map((item) => item.id) }, { immediate: true })
 
 function toggleTag(tagID: string): void {
   if (!selectedTagIDs.value.includes(tagID) && selectedTagIDs.value.length >= 20) {
@@ -116,11 +110,11 @@ async function handleCreateTag(notify = true): Promise<boolean> {
 }
 
 const submit = form.handleSubmit(async (values) => {
-  if (mediaTagsQuery.isPending.value || mediaCollectionsQuery.isPending.value) {
+  if (mediaTagsQuery.isPending.value) {
     serverError.value = 'Chargement des associations en cours.'
     return
   }
-  if (mediaTagsQuery.isError.value || mediaCollectionsQuery.isError.value) {
+  if (mediaTagsQuery.isError.value) {
     serverError.value = 'Impossible de charger les associations actuelles de la vidéo.'
     return
   }
@@ -128,7 +122,7 @@ const submit = form.handleSubmit(async (values) => {
   isSaving.value = true
   serverError.value = ''
   try {
-    const [updated, assignedTags, assignedCollections] = await Promise.all([
+    const [updated, assignedTags] = await Promise.all([
       updateMedia(props.item.id, {
         title: values.title,
         description: values.description,
@@ -136,12 +130,8 @@ const submit = form.handleSubmit(async (values) => {
         favorite: props.item.favorite,
       }),
       setMediaTags(props.item.id, selectedTagIDs.value),
-      setMediaCollections(props.item.id, selectedCollectionIDs.value),
     ])
     queryClient.setQueryData(['media-tags', props.item.id], assignedTags)
-    queryClient.setQueryData(['media-collections', props.item.id], assignedCollections)
-    void queryClient.invalidateQueries({ queryKey: ['collections'] })
-    void queryClient.invalidateQueries({ queryKey: ['collection-media'] })
     void queryClient.invalidateQueries({ queryKey: ['media-tags', props.item.id] })
     void queryClient.invalidateQueries({ queryKey: ['tag-assignments'] })
     emit('saved', updated)
@@ -197,14 +187,10 @@ const submit = form.handleSubmit(async (values) => {
           </div>
           <p v-if="tagError" class="text-sm text-red-300">{{ tagError }}</p>
         </div>
-        <div v-if="collectionsQuery.data.value?.length" class="space-y-3">
-          <div><p class="text-sm font-medium">Collections</p><p class="mt-1 text-xs text-muted-foreground">Ajoutez cette vidéo à une ou plusieurs collections.</p></div>
-          <div class="flex flex-wrap gap-2"><button v-for="item in collectionsQuery.data.value" :key="item.id" type="button" @click="selectedCollectionIDs = selectedCollectionIDs.includes(item.id) ? selectedCollectionIDs.filter((id) => id !== item.id) : [...selectedCollectionIDs, item.id]"><Badge variant="outline" :class="selectedCollectionIDs.includes(item.id) ? 'border-primary bg-primary/15' : 'opacity-55'">{{ item.name }}</Badge></button></div>
-        </div>
         <p v-if="serverError" class="text-sm text-red-300">{{ serverError }}</p>
         <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button class="w-full sm:w-auto" type="button" variant="ghost" :disabled="isSaving" @click="open = false">Annuler</Button>
-          <Button class="w-full sm:w-auto" type="submit" :disabled="isSaving || mediaTagsQuery.isPending.value || mediaCollectionsQuery.isPending.value"><LoaderCircle v-if="isSaving" class="animate-spin" />Enregistrer</Button>
+          <Button class="w-full sm:w-auto" type="submit" :disabled="isSaving || mediaTagsQuery.isPending.value"><LoaderCircle v-if="isSaving" class="animate-spin" />Enregistrer</Button>
         </div>
       </form>
     </DialogContent>

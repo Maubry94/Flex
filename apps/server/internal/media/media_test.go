@@ -40,15 +40,15 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func (repository *memoryMediaRepository) List(context.Context, string) ([]File, error) {
+func (repository *memoryMediaRepository) List(context.Context, string, string) ([]File, error) {
 	return repository.items, nil
 }
 
-func (repository *memoryMediaRepository) Favorites(context.Context) ([]File, error) {
+func (repository *memoryMediaRepository) Favorites(context.Context, string) ([]File, error) {
 	return repository.items, nil
 }
 
-func (repository *memoryMediaRepository) Get(_ context.Context, id string) (File, error) {
+func (repository *memoryMediaRepository) Get(_ context.Context, _ string, id string) (File, error) {
 	for _, item := range repository.items {
 		if item.ID == id {
 			return item, nil
@@ -57,24 +57,34 @@ func (repository *memoryMediaRepository) Get(_ context.Context, id string) (File
 	return File{}, ErrNotFound
 }
 
-func (repository *memoryMediaRepository) Home(context.Context, int) (Home, error) {
+func (repository *memoryMediaRepository) Home(context.Context, string, int) (Home, error) {
 	return Home{RecentlyAdded: repository.items}, nil
 }
 
-func (repository *memoryMediaRepository) Search(context.Context, string, int) ([]SearchResult, error) {
+func (repository *memoryMediaRepository) Search(context.Context, string, string, int) ([]SearchResult, error) {
 	return nil, nil
 }
 func (repository *memoryMediaRepository) Folders(context.Context, string) ([]FolderAssignment, error) {
 	return nil, nil
 }
 
-func (repository *memoryMediaRepository) UpdateMetadata(_ context.Context, id string, input MetadataInput) error {
+func (repository *memoryMediaRepository) UpdateMetadata(_ context.Context, _ string, id string, input MetadataInput) error {
 	for index := range repository.items {
 		if repository.items[index].ID == id {
 			repository.items[index].Title = input.Title
 			repository.items[index].Description = input.Description
 			repository.items[index].RecordedAt = input.RecordedAt
 			repository.items[index].Favorite = input.Favorite
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (repository *memoryMediaRepository) SetFavorite(_ context.Context, _ string, id string, favorite bool) error {
+	for index := range repository.items {
+		if repository.items[index].ID == id {
+			repository.items[index].Favorite = favorite
 			return nil
 		}
 	}
@@ -228,7 +238,7 @@ func TestUpdateMetadata(t *testing.T) {
 	repository := &memoryMediaRepository{items: []File{{ID: "media-1", Title: "Ancien titre"}}}
 	scanner := NewScanner(fakeLibrarySource{}, repository, &fakeProbe{}, nil, nil, discardLogger())
 
-	updated, err := scanner.UpdateMetadata(context.Background(), "media-1", MetadataInput{
+	updated, err := scanner.UpdateMetadata(context.Background(), "user-1", "media-1", MetadataInput{
 		Title: "  Nouveau titre  ", Description: "  Description  ", Favorite: true,
 	})
 	if err != nil {
@@ -243,7 +253,7 @@ func TestUpdateMetadataRejectsEmptyTitle(t *testing.T) {
 	repository := &memoryMediaRepository{items: []File{{ID: "media-1", Title: "Titre"}}}
 	scanner := NewScanner(fakeLibrarySource{}, repository, &fakeProbe{}, nil, nil, discardLogger())
 
-	if _, err := scanner.UpdateMetadata(context.Background(), "media-1", MetadataInput{Title: "  "}); err != ErrInvalidTitle {
+	if _, err := scanner.UpdateMetadata(context.Background(), "user-1", "media-1", MetadataInput{Title: "  "}); err != ErrInvalidTitle {
 		t.Fatalf("expected ErrInvalidTitle, got %v", err)
 	}
 }

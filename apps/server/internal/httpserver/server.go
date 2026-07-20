@@ -32,13 +32,14 @@ type libraryService interface {
 }
 
 type mediaService interface {
-	List(ctx context.Context, libraryID string) ([]media.File, error)
-	Favorites(ctx context.Context) ([]media.File, error)
-	Get(ctx context.Context, id string) (media.File, error)
-	Home(ctx context.Context) (media.Home, error)
-	Search(ctx context.Context, query string) ([]media.SearchResult, error)
+	List(ctx context.Context, userID string, libraryID string) ([]media.File, error)
+	Favorites(ctx context.Context, userID string) ([]media.File, error)
+	Get(ctx context.Context, userID string, id string) (media.File, error)
+	Home(ctx context.Context, userID string) (media.Home, error)
+	Search(ctx context.Context, userID string, query string) ([]media.SearchResult, error)
 	Folders(ctx context.Context, libraryID string) ([]media.FolderAssignment, error)
-	UpdateMetadata(ctx context.Context, id string, input media.MetadataInput) (media.File, error)
+	UpdateMetadata(ctx context.Context, userID string, id string, input media.MetadataInput) (media.File, error)
+	SetFavorite(ctx context.Context, userID string, id string, favorite bool) (media.File, error)
 	Thumbnail(ctx context.Context, id string) (string, error)
 	Transcode(ctx context.Context, id string) (string, error)
 }
@@ -50,8 +51,8 @@ type scanService interface {
 }
 
 type playbackService interface {
-	Get(ctx context.Context, mediaID string) (playback.Progress, error)
-	Save(ctx context.Context, mediaID string, positionMS int64, durationMS int64) (playback.Progress, error)
+	Get(ctx context.Context, userID string, mediaID string) (playback.Progress, error)
+	Save(ctx context.Context, userID string, mediaID string, positionMS int64, durationMS int64) (playback.Progress, error)
 }
 
 type tagService interface {
@@ -62,31 +63,43 @@ type tagService interface {
 	SetForMedia(ctx context.Context, mediaID string, tagIDs []string) ([]tag.Tag, error)
 }
 type collectionService interface {
-	List(context.Context) ([]collection.Collection, error)
-	Create(context.Context, string) (collection.Collection, error)
-	Update(context.Context, string, string) (collection.Collection, error)
-	Delete(context.Context, string) error
-	ListForMedia(context.Context, string) ([]collection.Collection, error)
-	SetForMedia(context.Context, string, []string) ([]collection.Collection, error)
-	MediaIDs(context.Context, string) ([]string, error)
-	RemoveMedia(context.Context, string, string) error
+	List(context.Context, string) ([]collection.Collection, error)
+	Create(context.Context, string, string) (collection.Collection, error)
+	Update(context.Context, string, string, string) (collection.Collection, error)
+	Delete(context.Context, string, string) error
+	ListForMedia(context.Context, string, string) ([]collection.Collection, error)
+	SetForMedia(context.Context, string, string, []string) ([]collection.Collection, error)
+	MediaIDs(context.Context, string, string) ([]string, error)
+	RemoveMedia(context.Context, string, string, string) error
 }
 
-func New(cfg config.Config, logger *slog.Logger, libraries libraryService, mediaFiles mediaService, scans scanService, progress playbackService, tags tagService, collections collectionService) http.Handler {
+func New(cfg config.Config, logger *slog.Logger, authentication authService, libraries libraryService, mediaFiles mediaService, scans scanService, progress playbackService, tags tagService, collections collectionService) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", healthHandler)
+	mux.HandleFunc("GET /api/auth/status", authStatusHandler(authentication, logger))
+	mux.HandleFunc("POST /api/auth/setup", setupHandler(authentication, logger))
+	mux.HandleFunc("POST /api/auth/login", loginHandler(authentication, logger))
+	mux.HandleFunc("POST /api/auth/logout", logoutHandler(authentication, logger))
+	mux.HandleFunc("PUT /api/auth/password", changePasswordHandler(authentication, logger))
+	mux.HandleFunc("PATCH /api/auth/profile", updateProfileHandler(authentication, logger))
+	mux.HandleFunc("GET /api/users", requireAdmin(listUsersHandler(authentication, logger)))
+	mux.HandleFunc("POST /api/users", requireAdmin(createUserHandler(authentication, logger)))
+	mux.HandleFunc("PATCH /api/users/{userID}", requireAdmin(updateUserHandler(authentication, logger)))
+	mux.HandleFunc("PUT /api/users/{userID}/password", requireAdmin(resetUserPasswordHandler(authentication, logger)))
+	mux.HandleFunc("DELETE /api/users/{userID}", requireAdmin(deleteUserHandler(authentication, logger)))
 	mux.HandleFunc("GET /api/libraries", listLibrariesHandler(libraries, logger))
-	mux.HandleFunc("POST /api/libraries", createLibraryHandler(libraries, scans, logger))
-	mux.HandleFunc("PATCH /api/libraries/{libraryID}", updateLibraryHandler(libraries, logger))
-	mux.HandleFunc("DELETE /api/libraries/{libraryID}", deleteLibraryHandler(libraries, logger))
+	mux.HandleFunc("POST /api/libraries", requireAdmin(createLibraryHandler(libraries, scans, logger)))
+	mux.HandleFunc("PATCH /api/libraries/{libraryID}", requireAdmin(updateLibraryHandler(libraries, logger)))
+	mux.HandleFunc("DELETE /api/libraries/{libraryID}", requireAdmin(deleteLibraryHandler(libraries, logger)))
 	mux.HandleFunc("GET /api/libraries/{libraryID}/scan", scanStatusHandler(scans))
-	mux.HandleFunc("POST /api/libraries/{libraryID}/scan", scanLibraryHandler(scans, logger))
+	mux.HandleFunc("POST /api/libraries/{libraryID}/scan", requireAdmin(scanLibraryHandler(scans, logger)))
 	mux.HandleFunc("GET /api/libraries/{libraryID}/folders", libraryFoldersHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media", listMediaHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/favorites", favoritesHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/search", searchMediaHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}", getMediaHandler(mediaFiles, logger))
-	mux.HandleFunc("PATCH /api/media/{mediaID}", updateMediaHandler(mediaFiles, logger))
+	mux.HandleFunc("PATCH /api/media/{mediaID}", requireAdmin(updateMediaHandler(mediaFiles, logger)))
+	mux.HandleFunc("PUT /api/media/{mediaID}/favorite", setFavoriteHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/thumbnail", thumbnailHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/stream", streamHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/playback", playbackHandler(mediaFiles, logger))
@@ -95,10 +108,10 @@ func New(cfg config.Config, logger *slog.Logger, libraries libraryService, media
 	mux.HandleFunc("GET /api/media/{mediaID}/progress", getProgressHandler(progress, logger))
 	mux.HandleFunc("PUT /api/media/{mediaID}/progress", saveProgressHandler(progress, logger))
 	mux.HandleFunc("GET /api/tags", listTagsHandler(tags, logger))
-	mux.HandleFunc("POST /api/tags", createTagHandler(tags, logger))
+	mux.HandleFunc("POST /api/tags", requireAdmin(createTagHandler(tags, logger)))
 	mux.HandleFunc("GET /api/tag-assignments", listTagAssignmentsHandler(tags, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/tags", listMediaTagsHandler(tags, logger))
-	mux.HandleFunc("PUT /api/media/{mediaID}/tags", setMediaTagsHandler(tags, logger))
+	mux.HandleFunc("PUT /api/media/{mediaID}/tags", requireAdmin(setMediaTagsHandler(tags, logger)))
 	mux.HandleFunc("GET /api/collections", listCollectionsHandler(collections, logger))
 	mux.HandleFunc("POST /api/collections", createCollectionHandler(collections, logger))
 	mux.HandleFunc("PATCH /api/collections/{collectionID}", updateCollectionHandler(collections, logger))
@@ -109,7 +122,7 @@ func New(cfg config.Config, logger *slog.Logger, libraries libraryService, media
 	mux.HandleFunc("PUT /api/media/{mediaID}/collections", setMediaCollectionsHandler(collections, logger))
 	mux.Handle("/", spaHandler(cfg.WebPath))
 
-	return requestLogger(logger, secureHeaders(mux))
+	return requestLogger(logger, secureHeaders(requireAuthentication(authentication, logger, mux)))
 }
 
 func healthHandler(response http.ResponseWriter, _ *http.Request) {

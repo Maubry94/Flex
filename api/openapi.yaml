@@ -1,11 +1,210 @@
 openapi: 3.1.0
 info:
   title: Flex API
-  version: 0.4.0
+  version: 0.5.0
   description: API du serveur multimédia personnel Flex.
 servers:
   - url: /api
+security:
+  - cookieAuth: []
 paths:
+  /auth/status:
+    get:
+      security: []
+      operationId: getAuthStatus
+      summary: Indique si Flex est configuré et si une session est active.
+      responses:
+        "200":
+          description: État de l’authentification.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+  /auth/setup:
+    post:
+      security: []
+      operationId: setupAdministrator
+      summary: Crée le premier administrateur et ouvre une session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupAuthRequest"
+      responses:
+        "201":
+          description: Administrateur créé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "409":
+          description: Flex est déjà configuré.
+        "422":
+          description: Informations invalides.
+  /auth/login:
+    post:
+      security: []
+      operationId: login
+      summary: Ouvre une session utilisateur.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Session ouverte.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Identifiants incorrects.
+  /auth/logout:
+    post:
+      security: []
+      operationId: logout
+      summary: Ferme la session courante.
+      responses:
+        "204":
+          description: Session fermée.
+  /auth/password:
+    put:
+      operationId: changePassword
+      summary: Modifie le mot de passe de l'utilisateur connecté et révoque ses autres sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: Mot de passe modifié et session courante renouvelée.
+        "401":
+          description: Mot de passe actuel incorrect.
+        "422":
+          description: Nouveau mot de passe invalide.
+  /auth/profile:
+    patch:
+      operationId: updateProfile
+      summary: Modifie le profil de l'utilisateur connecté.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profil modifié.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "409":
+          description: Nom d’utilisateur déjà utilisé.
+        "422":
+          description: Nom d’utilisateur invalide.
+  /users:
+    get:
+      operationId: listUsers
+      summary: Liste les comptes Flex. Réservé aux administrateurs.
+      responses:
+        "200":
+          description: Liste des utilisateurs.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuthUser"
+        "403":
+          description: Droits administrateur requis.
+    post:
+      operationId: createUser
+      summary: Crée un compte Flex. Réservé aux administrateurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: Utilisateur créé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "409":
+          description: Nom d’utilisateur déjà utilisé.
+  /users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUser
+      summary: Modifie un compte Flex. Réservé aux administrateurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Utilisateur modifié.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "409":
+          description: Le dernier administrateur actif doit être conservé.
+    delete:
+      operationId: deleteUser
+      summary: Supprime un compte et ses sessions. Réservé aux administrateurs.
+      responses:
+        "204":
+          description: Utilisateur supprimé.
+        "409":
+          description: Le dernier administrateur actif doit être conservé.
+  /users/{userId}/password:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: resetUserPassword
+      summary: Remplace le mot de passe et révoque les sessions du compte.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 256
+      responses:
+        "204":
+          description: Mot de passe remplacé et sessions révoquées.
   /home:
     get:
       operationId: getHome
@@ -30,6 +229,7 @@ paths:
                       $ref: "#/components/schemas/MediaFile"
   /health:
     get:
+      security: []
       operationId: getHealth
       summary: Vérifie que le serveur Flex répond.
       responses:
@@ -345,10 +545,31 @@ paths:
           description: Vidéo introuvable.
         "422":
           description: Métadonnées invalides.
+  /media/{mediaId}/favorite:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    put:
+      operationId: setMediaFavorite
+      summary: Ajoute ou retire une vidéo des favoris de l'utilisateur connecté.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetFavoriteRequest"
+      responses:
+        "200":
+          description: Favori enregistré pour l'utilisateur connecté.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaFile"
+        "404":
+          description: Vidéo introuvable.
   /favorites:
     get:
       operationId: listFavorites
-      summary: Liste toutes les vidéos favorites.
+      summary: Liste les vidéos favorites de l'utilisateur connecté.
       responses:
         "200":
           description: Liste des vidéos favorites.
@@ -546,6 +767,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlaybackProgress"
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: flex_session
   parameters:
     LibraryId:
       name: libraryId
@@ -566,6 +792,103 @@ components:
       schema:
         type: string
   schemas:
+    AuthUser:
+      type: object
+      additionalProperties: false
+      required: [id, username, role, active]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        active:
+          type: boolean
+    AuthStatus:
+      type: object
+      additionalProperties: false
+      required: [configured, authenticated]
+      properties:
+        configured:
+          type: boolean
+        authenticated:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/AuthUser"
+    SetupAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 256
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password, role]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+        role:
+          type: string
+          enum: [admin, user]
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, role, active]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        role:
+          type: string
+          enum: [admin, user]
+        active:
+          type: boolean
     HealthResponse:
       type: object
       additionalProperties: false
@@ -801,6 +1124,13 @@ components:
             - type: string
               format: date
             - type: "null"
+        favorite:
+          type: boolean
+    SetFavoriteRequest:
+      type: object
+      additionalProperties: false
+      required: [favorite]
+      properties:
         favorite:
           type: boolean
     Tag:

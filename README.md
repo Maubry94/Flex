@@ -2,7 +2,7 @@
 
 Flex est un serveur multimédia personnel, auto-hébergé et conçu pour parcourir puis lire ses propres vidéos depuis un navigateur récent.
 
-Le projet est au début de son développement. Il permet déjà d'ajouter des bibliothèques, d'indexer les vidéos avec FFmpeg, de générer leurs miniatures, de les lire directement ou après conversion HLS en H.264, et de reprendre automatiquement une lecture interrompue.
+Le projet est au début de son développement. Il permet déjà d'ajouter des bibliothèques, d'indexer les vidéos avec FFmpeg, de générer leurs miniatures, de les lire directement ou après conversion HLS en H.264, et de reprendre automatiquement une lecture interrompue. Flex prend également en charge plusieurs comptes, les favoris, les collections et les progressions de lecture propres à chaque utilisateur.
 
 La conversion HLS est actuellement réalisée entièrement avant la première lecture puis conservée dans le cache. Le transcodage progressif, les limites de cache et l'accélération matérielle arriveront dans des versions suivantes.
 
@@ -17,6 +17,8 @@ docker compose up --build
 ```
 
 Flex est ensuite disponible sur <http://localhost:8080>.
+
+Lors de la première ouverture, Flex demande de créer le compte administrateur. Cet administrateur peut ensuite créer et gérer les autres comptes depuis le menu du profil, dans **Administration → Utilisateurs**.
 
 Placez quelques vidéos dans `./media`, ou modifiez `FLEX_MEDIA_PATH` dans `.env`. Les médias sont toujours montés en lecture seule dans le conteneur.
 
@@ -43,11 +45,11 @@ Pour démarrer exceptionnellement l'interface sans le serveur :
 npm run dev:web
 ```
 
-Sans Docker, utilisez Node.js 24 et Go 1.25 :
+Sans Docker, utilisez Node.js 24 et Go 1.25. Démarrez d'abord l'interface :
 
 ```bash
 npm install
-npm run dev
+npm run dev:web
 ```
 
 Puis, dans un autre terminal :
@@ -76,12 +78,14 @@ Pour TrueNAS, supprimez la section `build` du YAML et utilisez une image Flex ve
 | --- | --- | --- |
 | `FLEX_PORT` | `8080` | Port publié sur l'hôte par Compose. |
 | `FLEX_UID` / `FLEX_GID` | `1000` | Identité Linux du processus dans le conteneur. |
-| `FLEX_CONFIG_PATH` | `./data/config` | Configuration persistante et future base SQLite. |
-| `FLEX_CACHE_PATH` | `./data/cache` | Miniatures et futurs transcodages temporaires. |
+| `FLEX_CONFIG_PATH` | `./data/config` | Configuration persistante et base SQLite. |
+| `FLEX_CACHE_PATH` | `./data/cache` | Miniatures et transcodages temporaires. |
 | `FLEX_MEDIA_PATH` | `./media` | Racine des vidéos, montée en lecture seule. |
 | `FLEX_IMAGE` | `ghcr.io/flex-media/flex:latest` | Image utilisée par Compose. |
 
-N'exposez pas le MVP directement sur Internet : il ne possède pas encore d'authentification. Derrière un Cloudflare Tunnel, protégez-le avec Cloudflare Access.
+Flex protège l'interface avec des comptes locaux et des sessions HTTP sécurisées. Pour une exposition sur Internet, utilisez néanmoins HTTPS et conservez une protection périmétrique telle que Cloudflare Access devant l'application. Flex ne configure ni TLS, ni tunnel, ni limitation réseau à votre place.
+
+Les bibliothèques, leur analyse et les métadonnées éditoriales sont administrées par les comptes administrateur. Les favoris, la progression de lecture et les collections sont personnels à chaque utilisateur.
 
 ## Qualité
 

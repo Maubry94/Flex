@@ -13,10 +13,13 @@ import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessa
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { ApiError, createLibrary, getLibraries } from '@/lib/api/libraries'
+import { getAuthStatus } from '@/lib/api/auth'
 import { asForwardedProps } from '@/lib/utils'
 
 const queryClient = useQueryClient()
 const isDialogOpen = ref(false)
+const authQuery = useQuery({ queryKey: ['auth-status'], queryFn: ({ signal }) => getAuthStatus(signal) })
+const isAdmin = computed(() => authQuery.data.value?.user?.role === 'admin')
 
 const libraryFormSchema = toTypedSchema(z.object({
   name: z.string().trim().min(1, 'Le nom est requis.').max(100, 'Le nom est trop long.'),
@@ -82,7 +85,7 @@ const submit = libraryForm.handleSubmit((values) => {
           <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Bibliothèques</h1>
           <p class="mt-2 text-sm text-muted-foreground">Choisissez une bibliothèque pour parcourir ses vidéos.</p>
         </div>
-        <Button v-if="librariesQuery.data.value?.length" @click="openDialog">
+        <Button v-if="librariesQuery.data.value?.length && isAdmin" @click="openDialog">
           <FolderPlus />
           Ajouter
         </Button>
@@ -96,8 +99,8 @@ const submit = libraryForm.handleSubmit((values) => {
         <EmptyContent><Button variant="secondary" @click="librariesQuery.refetch()">Réessayer</Button></EmptyContent>
       </Empty>
       <Empty v-else-if="librariesQuery.data.value?.length === 0" class="mt-10 min-h-130 border border-white/12 bg-white/[0.018]">
-        <EmptyHeader><EmptyMedia variant="icon" class="size-16 rounded-2xl text-primary"><Film class="size-8" /></EmptyMedia><EmptyTitle>Votre bibliothèque est vide</EmptyTitle><EmptyDescription>Ajoutez le dossier contenant vos vidéos pour commencer.</EmptyDescription></EmptyHeader>
-        <EmptyContent><Button size="lg" @click="openDialog"><FolderPlus />Ajouter une bibliothèque</Button></EmptyContent>
+        <EmptyHeader><EmptyMedia variant="icon" class="size-16 rounded-2xl text-primary"><Film class="size-8" /></EmptyMedia><EmptyTitle>Votre bibliothèque est vide</EmptyTitle><EmptyDescription>{{ isAdmin ? 'Ajoutez le dossier contenant vos vidéos pour commencer.' : 'Aucune bibliothèque n’est encore disponible.' }}</EmptyDescription></EmptyHeader>
+        <EmptyContent v-if="isAdmin"><Button size="lg" @click="openDialog"><FolderPlus />Ajouter une bibliothèque</Button></EmptyContent>
       </Empty>
       <div v-else class="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <RouterLink v-for="library in librariesQuery.data.value" :key="library.id" :to="{ name: 'library', params: { libraryId: library.id } }" class="group block">

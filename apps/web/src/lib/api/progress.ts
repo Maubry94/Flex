@@ -24,7 +24,7 @@ function isProgress(value: unknown): value is PlaybackProgress {
 }
 
 export async function getProgress(mediaId: string, signal?: AbortSignal): Promise<PlaybackProgress> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}/progress`, signal === undefined ? undefined : { signal })
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/progress`, signal === undefined ? undefined : { signal })
   if (!response.ok) throw new Error('Impossible de charger la progression')
   const body: unknown = await response.json()
   if (!isProgress(body)) throw new Error('La réponse de progression est invalide')
@@ -32,7 +32,7 @@ export async function getProgress(mediaId: string, signal?: AbortSignal): Promis
 }
 
 export async function saveProgress(mediaId: string, input: SaveProgressInput): Promise<PlaybackProgress> {
-  const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}/progress`, {
+  const response = await apiFetch(`/api/media/${encodeURIComponent(mediaId)}/progress`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -43,4 +43,5 @@ export async function saveProgress(mediaId: string, input: SaveProgressInput): P
   if (!isProgress(body)) throw new Error('La progression sauvegardée est invalide')
   return body
 }
+import { apiFetch } from './client'
 

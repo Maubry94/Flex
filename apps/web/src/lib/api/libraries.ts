@@ -72,7 +72,7 @@ async function parseError(response: Response): Promise<ApiError> {
 }
 
 export async function getLibraries(signal?: AbortSignal): Promise<Library[]> {
-  const response = await fetch('/api/libraries', signal === undefined ? undefined : { signal })
+  const response = await apiFetch('/api/libraries', signal === undefined ? undefined : { signal })
   if (!response.ok) throw await parseError(response)
 
   const body: unknown = await response.json()
@@ -81,7 +81,7 @@ export async function getLibraries(signal?: AbortSignal): Promise<Library[]> {
 }
 
 export async function createLibrary(input: CreateLibraryInput): Promise<Library> {
-  const response = await fetch('/api/libraries', {
+  const response = await apiFetch('/api/libraries', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -94,7 +94,7 @@ export async function createLibrary(input: CreateLibraryInput): Promise<Library>
 }
 
 export async function updateLibrary(id: string, input: CreateLibraryInput): Promise<Library> {
-  const response = await fetch(`/api/libraries/${encodeURIComponent(id)}`, {
+  const response = await apiFetch(`/api/libraries/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -106,6 +106,7 @@ export async function updateLibrary(id: string, input: CreateLibraryInput): Prom
 }
 
 export async function deleteLibrary(id: string): Promise<void> {
-  const response = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const response = await apiFetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!response.ok) throw await parseError(response)
 }
+import { apiFetch } from './client'

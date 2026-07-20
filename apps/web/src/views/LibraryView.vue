@@ -13,10 +13,11 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getLibraries } from '@/lib/api/libraries'
 import { getLibraryFolders } from '@/lib/api/folders'
-import { getMedia, getScanStatus, scanLibrary, updateMedia } from '@/lib/api/media'
+import { getMedia, getScanStatus, scanLibrary, setMediaFavorite } from '@/lib/api/media'
 import { getCollections, getMediaCollections, setMediaCollections } from '@/lib/api/collections'
 import { saveProgress } from '@/lib/api/progress'
 import { getTagAssignments } from '@/lib/api/tags'
+import { getAuthStatus } from '@/lib/api/auth'
 
 const route = useRoute()
 const queryClient = useQueryClient()
@@ -31,6 +32,8 @@ const selectedIDs = ref<string[]>([])
 const selectedCollectionID = ref('')
 const isBulkUpdating = ref(false)
 const scanWasAutomatic = ref(false)
+const authQuery = useQuery({ queryKey: ['auth-status'], queryFn: ({ signal }) => getAuthStatus(signal) })
+const isAdmin = computed(() => authQuery.data.value?.user?.role === 'admin')
 
 const librariesQuery = useQuery({ queryKey: ['libraries'], queryFn: ({ signal }) => getLibraries(signal) })
 const library = computed(() => librariesQuery.data.value?.find((item) => item.id === libraryID.value))
@@ -137,7 +140,7 @@ async function runBulk(action: 'favorite' | 'unfavorite' | 'watched' | 'unwatche
   isBulkUpdating.value = true
   try {
     if (action === 'favorite' || action === 'unfavorite') {
-      await Promise.all(items.map((item) => updateMedia(item.id, { title: item.title, description: item.description, recordedAt: item.recordedAt?.slice(0, 10) ?? null, favorite: action === 'favorite' })))
+      await Promise.all(items.map((item) => setMediaFavorite(item.id, action === 'favorite')))
     } else if (action === 'watched' || action === 'unwatched') {
       await Promise.all(items.map((item) => saveProgress(item.id, { positionMs: action === 'watched' ? item.durationMs : 0, durationMs: item.durationMs })))
     } else if (selectedCollectionID.value) {
@@ -168,11 +171,11 @@ async function runBulk(action: 'favorite' | 'unfavorite' | 'watched' | 'unwatche
           <h1 class="break-words text-3xl font-bold tracking-tight sm:truncate sm:text-4xl">{{ library?.name ?? 'Bibliothèque' }}</h1>
         </div>
         <div class="flex gap-2">
-          <Button variant="secondary" :disabled="isScanning" @click="scanMutation.mutate()">
+          <Button v-if="isAdmin" variant="secondary" :disabled="isScanning" @click="scanMutation.mutate()">
             <RefreshCw :class="isScanning && 'animate-spin'" />
             {{ isScanning ? 'Analyse…' : 'Analyser' }}
           </Button>
-          <RouterLink :to="{ name: 'library-settings', params: { libraryId: libraryID } }" :class="buttonVariants({ variant: 'ghost', size: 'icon' })" aria-label="Paramètres de la bibliothèque">
+          <RouterLink v-if="isAdmin" :to="{ name: 'library-settings', params: { libraryId: libraryID } }" :class="buttonVariants({ variant: 'ghost', size: 'icon' })" aria-label="Paramètres de la bibliothèque">
             <Settings />
           </RouterLink>
         </div>
@@ -239,7 +242,7 @@ async function runBulk(action: 'favorite' | 'unfavorite' | 'watched' | 'unwatche
       </Empty>
       <Empty v-else-if="mediaQuery.data.value?.length === 0" class="mt-5 min-h-64 border border-white/10 bg-white/1.5">
         <EmptyHeader><EmptyMedia variant="icon"><Video /></EmptyMedia><EmptyTitle>Aucune vidéo indexée</EmptyTitle><EmptyDescription>Les nouvelles vidéos apparaîtront automatiquement dans cette bibliothèque.</EmptyDescription></EmptyHeader>
-        <EmptyContent><Button variant="secondary" :disabled="isScanning" @click="scanMutation.mutate()"><RefreshCw :class="isScanning && 'animate-spin'" />{{ isScanning ? 'Analyse en cours…' : 'Analyser maintenant' }}</Button></EmptyContent>
+        <EmptyContent v-if="isAdmin"><Button variant="secondary" :disabled="isScanning" @click="scanMutation.mutate()"><RefreshCw :class="isScanning && 'animate-spin'" />{{ isScanning ? 'Analyse en cours…' : 'Analyser maintenant' }}</Button></EmptyContent>
       </Empty>
       <div v-else-if="filteredMedia.length" class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         <MediaCard v-for="item in filteredMedia" :key="item.id" :item="item" :selectable="selectionMode" :selected="selectedIDs.includes(item.id)" @select="toggleSelection(item.id, $event)" />

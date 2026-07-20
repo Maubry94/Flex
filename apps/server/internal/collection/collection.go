@@ -25,8 +25,8 @@ type Service struct{ db *sql.DB }
 
 func NewService(db *sql.DB) *Service { return &Service{db: db} }
 
-func (service *Service) List(ctx context.Context) ([]Collection, error) {
-	rows, err := service.db.QueryContext(ctx, `SELECT c.id, c.name, COUNT(cm.media_id) FROM collections c LEFT JOIN collection_media cm ON cm.collection_id = c.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE`)
+func (service *Service) List(ctx context.Context, userID string) ([]Collection, error) {
+	rows, err := service.db.QueryContext(ctx, `SELECT c.id, c.name, COUNT(cm.media_id) FROM collections c LEFT JOIN collection_media cm ON cm.collection_id = c.id WHERE c.user_id = ? GROUP BY c.id ORDER BY c.name COLLATE NOCASE`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list collections: %w", err)
 	}
@@ -42,7 +42,7 @@ func (service *Service) List(ctx context.Context) ([]Collection, error) {
 	return items, rows.Err()
 }
 
-func (service *Service) Create(ctx context.Context, name string) (Collection, error) {
+func (service *Service) Create(ctx context.Context, userID string, name string) (Collection, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 100 {
 		return Collection{}, ErrInvalid
@@ -52,7 +52,7 @@ func (service *Service) Create(ctx context.Context, name string) (Collection, er
 		return Collection{}, err
 	}
 	item := Collection{ID: hex.EncodeToString(value), Name: name}
-	if _, err := service.db.ExecContext(ctx, `INSERT INTO collections (id, name, created_at) VALUES (?, ?, ?)`, item.ID, item.Name, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if _, err := service.db.ExecContext(ctx, `INSERT INTO collections (id, user_id, name, created_at) VALUES (?, ?, ?, ?)`, item.ID, userID, item.Name, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return Collection{}, ErrConflict
 		}
@@ -61,12 +61,12 @@ func (service *Service) Create(ctx context.Context, name string) (Collection, er
 	return item, nil
 }
 
-func (service *Service) Update(ctx context.Context, id string, name string) (Collection, error) {
+func (service *Service) Update(ctx context.Context, userID string, id string, name string) (Collection, error) {
 	name = strings.TrimSpace(name)
 	if id == "" || name == "" || len(name) > 100 {
 		return Collection{}, ErrInvalid
 	}
-	result, err := service.db.ExecContext(ctx, `UPDATE collections SET name = ? WHERE id = ?`, name, id)
+	result, err := service.db.ExecContext(ctx, `UPDATE collections SET name = ? WHERE id = ? AND user_id = ?`, name, id, userID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return Collection{}, ErrConflict
@@ -79,14 +79,14 @@ func (service *Service) Update(ctx context.Context, id string, name string) (Col
 		return Collection{}, ErrNotFound
 	}
 	var item Collection
-	if err := service.db.QueryRowContext(ctx, `SELECT c.id, c.name, COUNT(cm.media_id) FROM collections c LEFT JOIN collection_media cm ON cm.collection_id = c.id WHERE c.id = ? GROUP BY c.id`, id).Scan(&item.ID, &item.Name, &item.MediaCount); err != nil {
+	if err := service.db.QueryRowContext(ctx, `SELECT c.id, c.name, COUNT(cm.media_id) FROM collections c LEFT JOIN collection_media cm ON cm.collection_id = c.id WHERE c.id = ? AND c.user_id = ? GROUP BY c.id`, id, userID).Scan(&item.ID, &item.Name, &item.MediaCount); err != nil {
 		return Collection{}, fmt.Errorf("get updated collection: %w", err)
 	}
 	return item, nil
 }
 
-func (service *Service) Delete(ctx context.Context, id string) error {
-	result, err := service.db.ExecContext(ctx, `DELETE FROM collections WHERE id = ?`, id)
+func (service *Service) Delete(ctx context.Context, userID string, id string) error {
+	result, err := service.db.ExecContext(ctx, `DELETE FROM collections WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete collection: %w", err)
 	}
@@ -98,8 +98,8 @@ func (service *Service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (service *Service) RemoveMedia(ctx context.Context, id string, mediaID string) error {
-	result, err := service.db.ExecContext(ctx, `DELETE FROM collection_media WHERE collection_id = ? AND media_id = ?`, id, mediaID)
+func (service *Service) RemoveMedia(ctx context.Context, userID string, id string, mediaID string) error {
+	result, err := service.db.ExecContext(ctx, `DELETE FROM collection_media WHERE collection_id = ? AND media_id = ? AND EXISTS (SELECT 1 FROM collections WHERE id = ? AND user_id = ?)`, id, mediaID, id, userID)
 	if err != nil {
 		return fmt.Errorf("remove media from collection: %w", err)
 	}
@@ -111,7 +111,7 @@ func (service *Service) RemoveMedia(ctx context.Context, id string, mediaID stri
 	return nil
 }
 
-func (service *Service) ListForMedia(ctx context.Context, mediaID string) ([]Collection, error) {
+func (service *Service) ListForMedia(ctx context.Context, userID string, mediaID string) ([]Collection, error) {
 	var exists bool
 	if err := service.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media_files WHERE id = ?)`, mediaID).Scan(&exists); err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (service *Service) ListForMedia(ctx context.Context, mediaID string) ([]Col
 	if !exists {
 		return nil, ErrMediaNotFound
 	}
-	rows, err := service.db.QueryContext(ctx, `SELECT c.id, c.name, (SELECT COUNT(*) FROM collection_media x WHERE x.collection_id = c.id) FROM collections c JOIN collection_media cm ON cm.collection_id = c.id WHERE cm.media_id = ? ORDER BY c.name COLLATE NOCASE`, mediaID)
+	rows, err := service.db.QueryContext(ctx, `SELECT c.id, c.name, (SELECT COUNT(*) FROM collection_media x WHERE x.collection_id = c.id) FROM collections c JOIN collection_media cm ON cm.collection_id = c.id WHERE c.user_id = ? AND cm.media_id = ? ORDER BY c.name COLLATE NOCASE`, userID, mediaID)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (service *Service) ListForMedia(ctx context.Context, mediaID string) ([]Col
 	return items, rows.Err()
 }
 
-func (service *Service) SetForMedia(ctx context.Context, mediaID string, ids []string) ([]Collection, error) {
+func (service *Service) SetForMedia(ctx context.Context, userID string, mediaID string, ids []string) ([]Collection, error) {
 	if len(ids) > 50 {
 		return nil, ErrInvalid
 	}
@@ -151,7 +151,7 @@ func (service *Service) SetForMedia(ctx context.Context, mediaID string, ids []s
 	if !exists {
 		return nil, ErrMediaNotFound
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM collection_media WHERE media_id = ?`, mediaID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM collection_media WHERE media_id = ? AND collection_id IN (SELECT id FROM collections WHERE user_id = ?)`, mediaID, userID); err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
@@ -160,7 +160,7 @@ func (service *Service) SetForMedia(ctx context.Context, mediaID string, ids []s
 			continue
 		}
 		var ok bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM collections WHERE id = ?)`, id).Scan(&ok); err != nil || !ok {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM collections WHERE id = ? AND user_id = ?)`, id, userID).Scan(&ok); err != nil || !ok {
 			return nil, ErrInvalid
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO collection_media (collection_id, media_id) VALUES (?, ?)`, id, mediaID); err != nil {
@@ -171,11 +171,18 @@ func (service *Service) SetForMedia(ctx context.Context, mediaID string, ids []s
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return service.ListForMedia(ctx, mediaID)
+	return service.ListForMedia(ctx, userID, mediaID)
 }
 
-func (service *Service) MediaIDs(ctx context.Context, id string) ([]string, error) {
-	rows, err := service.db.QueryContext(ctx, `SELECT media_id FROM collection_media WHERE collection_id = ? ORDER BY rowid`, id)
+func (service *Service) MediaIDs(ctx context.Context, userID string, id string) ([]string, error) {
+	var exists bool
+	if err := service.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM collections WHERE id = ? AND user_id = ?)`, id, userID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	rows, err := service.db.QueryContext(ctx, `SELECT cm.media_id FROM collection_media cm JOIN collections c ON c.id = cm.collection_id WHERE cm.collection_id = ? AND c.user_id = ? ORDER BY cm.rowid`, id, userID)
 	if err != nil {
 		return nil, err
 	}

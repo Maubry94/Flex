@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getFavorites, getScanStatus, searchMedia, updateMedia } from './media'
+import { getFavorites, getScanStatus, searchMedia, setMediaFavorite, updateMedia } from './media'
 
 const searchResult = {
   id: 'media-1',
@@ -84,6 +84,18 @@ describe('getFavorites', () => {
     )
 
     await expect(getFavorites()).rejects.toThrow('invalide')
+  })
+})
+
+describe('setMediaFavorite', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('updates only the favorite state of the current user', async () => {
+    const favorite = { ...searchResult, favorite: true }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(favorite)))
+
+    await expect(setMediaFavorite(searchResult.id, true)).resolves.toEqual(favorite)
+    expect(fetchMock).toHaveBeenCalledWith('/api/media/media-1/favorite', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ favorite: true }) }))
   })
 })
 

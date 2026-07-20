@@ -41,6 +41,10 @@ type updateMediaRequest struct {
 	Favorite    bool    `json:"favorite"`
 }
 
+type favoriteRequest struct {
+	Favorite bool `json:"favorite"`
+}
+
 type mediaListResponse struct {
 	Items []mediaResponse `json:"items"`
 }
@@ -111,7 +115,7 @@ func listMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFun
 			writeError(response, http.StatusBadRequest, "missing_library", "L'identifiant de la bibliothèque est requis")
 			return
 		}
-		items, err := service.List(request.Context(), libraryID)
+		items, err := service.List(request.Context(), currentUser(request).ID, libraryID)
 		if err != nil {
 			logger.Error("list media", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger les vidéos")
@@ -128,7 +132,7 @@ func listMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFun
 
 func favoritesHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		items, err := service.Favorites(request.Context())
+		items, err := service.Favorites(request.Context(), currentUser(request).ID)
 		if err != nil {
 			logger.Error("list favorite media", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger les favoris")
@@ -145,7 +149,7 @@ func favoritesHandler(service mediaService, logger *slog.Logger) http.HandlerFun
 
 func searchMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		items, err := service.Search(request.Context(), request.URL.Query().Get("q"))
+		items, err := service.Search(request.Context(), currentUser(request).ID, request.URL.Query().Get("q"))
 		if err != nil {
 			logger.Error("search media", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "La recherche a échoué")
@@ -162,7 +166,7 @@ func searchMediaHandler(service mediaService, logger *slog.Logger) http.HandlerF
 
 func homeHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		home, err := service.Home(request.Context())
+		home, err := service.Home(request.Context(), currentUser(request).ID)
 		if err != nil {
 			logger.Error("load home", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger l'accueil")
@@ -185,7 +189,7 @@ func homeHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 
 func getMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		item, err := service.Get(request.Context(), request.PathValue("mediaID"))
+		item, err := service.Get(request.Context(), currentUser(request).ID, request.PathValue("mediaID"))
 		if errors.Is(err, media.ErrNotFound) {
 			writeError(response, http.StatusNotFound, "media_not_found", "La vidéo n'existe pas")
 			return
@@ -218,7 +222,7 @@ func updateMediaHandler(service mediaService, logger *slog.Logger) http.HandlerF
 			}
 			recordedAt = &parsed
 		}
-		updated, err := service.UpdateMetadata(request.Context(), request.PathValue("mediaID"), media.MetadataInput{
+		updated, err := service.UpdateMetadata(request.Context(), currentUser(request).ID, request.PathValue("mediaID"), media.MetadataInput{
 			Title: input.Title, Description: input.Description, RecordedAt: recordedAt, Favorite: input.Favorite,
 		})
 		switch {
@@ -233,6 +237,30 @@ func updateMediaHandler(service mediaService, logger *slog.Logger) http.HandlerF
 			response.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(response).Encode(mediaToResponse(updated))
 		}
+	}
+}
+
+func setFavoriteHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		var input favoriteRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_request", "La requête est invalide")
+			return
+		}
+		item, err := service.SetFavorite(request.Context(), currentUser(request).ID, request.PathValue("mediaID"), input.Favorite)
+		if errors.Is(err, media.ErrNotFound) {
+			writeError(response, http.StatusNotFound, "media_not_found", "La vidéo n'existe pas")
+			return
+		}
+		if err != nil {
+			logger.Error("update media favorite", "error", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de modifier le favori")
+			return
+		}
+		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(response).Encode(mediaToResponse(item))
 	}
 }
 
@@ -255,7 +283,7 @@ func thumbnailHandler(service mediaService, logger *slog.Logger) http.HandlerFun
 
 func streamHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		item, err := service.Get(request.Context(), request.PathValue("mediaID"))
+		item, err := service.Get(request.Context(), currentUser(request).ID, request.PathValue("mediaID"))
 		if errors.Is(err, media.ErrNotFound) {
 			http.NotFound(response, request)
 			return
@@ -284,7 +312,7 @@ func streamHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 func playbackHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		mediaID := request.PathValue("mediaID")
-		item, err := service.Get(request.Context(), mediaID)
+		item, err := service.Get(request.Context(), currentUser(request).ID, mediaID)
 		if errors.Is(err, media.ErrNotFound) {
 			writeError(response, http.StatusNotFound, "media_not_found", "La vidéo n'existe pas")
 			return

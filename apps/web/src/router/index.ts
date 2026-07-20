@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getAuthStatus } from '@/lib/api/auth'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -29,11 +30,29 @@ export const router = createRouter({
       path: '/libraries/:libraryId/settings',
       name: 'library-settings',
       component: () => import('@/views/LibrarySettingsView.vue'),
+      meta: { requiresAdmin: true },
     },
     {
       path: '/videos/:mediaId',
       name: 'video',
       component: () => import('@/views/VideoView.vue'),
     },
+    {
+      path: '/users',
+      name: 'users',
+      component: () => import('@/views/UsersView.vue'),
+      meta: { requiresAdmin: true },
+    },
+    { path: '/account', name: 'account', component: () => import('@/views/AccountView.vue') },
   ],
+})
+
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAdmin) return true
+  try {
+    const status = await getAuthStatus()
+    return status.authenticated && status.user?.role === 'admin' ? true : { name: 'home' }
+  } catch {
+    return { name: 'home' }
+  }
 })

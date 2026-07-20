@@ -26,7 +26,7 @@ type saveProgressRequest struct {
 
 func getProgressHandler(service playbackService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		progress, err := service.Get(request.Context(), request.PathValue("mediaID"))
+		progress, err := service.Get(request.Context(), currentUser(request).ID, request.PathValue("mediaID"))
 		if err != nil {
 			logger.Error("get playback progress", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger la progression")
@@ -49,7 +49,7 @@ func saveProgressHandler(service playbackService, logger *slog.Logger) http.Hand
 			writeError(response, http.StatusBadRequest, "invalid_request", "La requête doit contenir un seul objet JSON")
 			return
 		}
-		progress, err := service.Save(request.Context(), request.PathValue("mediaID"), input.PositionMS, input.DurationMS)
+		progress, err := service.Save(request.Context(), currentUser(request).ID, request.PathValue("mediaID"), input.PositionMS, input.DurationMS)
 		if err != nil {
 			logger.Error("save playback progress", "error", err)
 			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de sauvegarder la progression")

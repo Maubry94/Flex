@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"flex.local/server/internal/auth"
 	"flex.local/server/internal/collection"
 	"flex.local/server/internal/config"
 	"flex.local/server/internal/database"
@@ -48,10 +49,11 @@ func main() {
 	playbackService := playback.NewService(playback.NewSQLRepository(db))
 	tagService := tag.NewService(db)
 	collectionService := collection.NewService(db)
+	authService := auth.NewService(db)
 
 	server := &http.Server{
 		Addr:              cfg.Address(),
-		Handler:           httpserver.New(cfg, logger, libraryService, mediaScanner, scanCoordinator, playbackService, tagService, collectionService),
+		Handler:           httpserver.New(cfg, logger, authService, libraryService, mediaScanner, scanCoordinator, playbackService, tagService, collectionService),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

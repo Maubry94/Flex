@@ -11,10 +11,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { getMediaByID, getPlayback, thumbnailURL, updateMedia } from '@/lib/api/media'
+import { getMediaByID, getPlayback, setMediaFavorite, thumbnailURL } from '@/lib/api/media'
 import type { MediaFile, PlaybackInfo } from '@/lib/api/media'
 import { getProgress, saveProgress } from '@/lib/api/progress'
 import { getTagAssignments } from '@/lib/api/tags'
+import { getAuthStatus } from '@/lib/api/auth'
 
 const route = useRoute()
 const queryClient = useQueryClient()
@@ -27,6 +28,8 @@ const resumeApplied = ref(false)
 const isPlaying = ref(false)
 const showTouchControls = ref(true)
 const isMetadataDialogOpen = ref(false)
+const authQuery = useQuery({ queryKey: ['auth-status'], queryFn: ({ signal }) => getAuthStatus(signal) })
+const canEditMetadata = computed(() => authQuery.data.value?.user?.role === 'admin')
 const hasManualProgressOverride = ref(false)
 let lastPeriodicSave = 0
 let hls: HlsInstance | undefined
@@ -52,12 +55,7 @@ const favoriteMutation = useMutation({
   mutationFn: async () => {
     const item = mediaQuery.data.value
     if (!item) throw new Error('Vidéo indisponible')
-    return updateMedia(item.id, {
-      title: item.title,
-      description: item.description,
-      recordedAt: item.recordedAt?.slice(0, 10) ?? null,
-      favorite: !item.favorite,
-    })
+    return setMediaFavorite(item.id, !item.favorite)
   },
   onSuccess: (item) => {
     applyUpdatedMedia(item)
@@ -349,7 +347,7 @@ function formatRecordedDate(value: string): string {
               <Button variant="ghost" size="icon" :aria-label="mediaQuery.data.value.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'" :disabled="favoriteMutation.isPending.value" @click="favoriteMutation.mutate()">
                 <Heart :class="mediaQuery.data.value.favorite && 'fill-primary text-primary'" />
               </Button>
-              <Button class="max-sm:flex-1" variant="secondary" @click="isMetadataDialogOpen = true"><Pencil />Modifier</Button>
+              <Button v-if="canEditMetadata" class="max-sm:flex-1" variant="secondary" @click="isMetadataDialogOpen = true"><Pencil />Modifier</Button>
             </div>
           </div>
           <p v-if="mediaQuery.data.value.description" class="mt-3 max-w-3xl whitespace-pre-line text-sm leading-6 text-muted-foreground">{{ mediaQuery.data.value.description }}</p>
