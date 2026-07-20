@@ -6,6 +6,7 @@ export interface Library {
   lastScanAt: string | null
   lastScanDiscovered: number
   lastScanIndexed: number
+  lastScanUnchanged: number
   lastScanSkipped: number
 }
 
@@ -49,6 +50,7 @@ function isLibrary(value: unknown): value is Library {
     && (value.lastScanAt === null || typeof value.lastScanAt === 'string')
     && typeof value.lastScanDiscovered === 'number'
     && typeof value.lastScanIndexed === 'number'
+    && typeof value.lastScanUnchanged === 'number'
     && typeof value.lastScanSkipped === 'number'
   )
 }

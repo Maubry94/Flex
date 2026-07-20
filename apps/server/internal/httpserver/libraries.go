@@ -19,6 +19,7 @@ type libraryResponse struct {
 	LastScanAt         *time.Time `json:"lastScanAt"`
 	LastScanDiscovered int        `json:"lastScanDiscovered"`
 	LastScanIndexed    int        `json:"lastScanIndexed"`
+	LastScanUnchanged  int        `json:"lastScanUnchanged"`
 	LastScanSkipped    int        `json:"lastScanSkipped"`
 }
 
@@ -141,7 +142,7 @@ func libraryToResponse(item library.Library) libraryResponse {
 	return libraryResponse{
 		ID: item.ID, Name: item.Name, Path: item.Path, CreatedAt: item.CreatedAt,
 		LastScanAt: item.LastScanAt, LastScanDiscovered: item.LastScanDiscovered,
-		LastScanIndexed: item.LastScanIndexed, LastScanSkipped: item.LastScanSkipped,
+		LastScanIndexed: item.LastScanIndexed, LastScanUnchanged: item.LastScanUnchanged, LastScanSkipped: item.LastScanSkipped,
 	}
 }
 

@@ -28,6 +28,7 @@ type Library struct {
 	LastScanAt         *time.Time
 	LastScanDiscovered int
 	LastScanIndexed    int
+	LastScanUnchanged  int
 	LastScanSkipped    int
 }
 
@@ -35,6 +36,7 @@ type ScanSummary struct {
 	FinishedAt time.Time
 	Discovered int
 	Indexed    int
+	Unchanged  int
 	Skipped    int
 }
 
@@ -179,7 +181,7 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 }
 
 func (repository *SQLRepository) List(ctx context.Context) ([]Library, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id, name, path, created_at, last_scan_at, last_scan_discovered, last_scan_indexed, last_scan_skipped FROM libraries ORDER BY name COLLATE NOCASE`)
+	rows, err := repository.db.QueryContext(ctx, `SELECT id, name, path, created_at, last_scan_at, last_scan_discovered, last_scan_indexed, last_scan_unchanged, last_scan_skipped FROM libraries ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, fmt.Errorf("query libraries: %w", err)
 	}
@@ -190,7 +192,7 @@ func (repository *SQLRepository) List(ctx context.Context) ([]Library, error) {
 		var item Library
 		var createdAt string
 		var lastScanAt sql.NullString
-		if err := rows.Scan(&item.ID, &item.Name, &item.Path, &createdAt, &lastScanAt, &item.LastScanDiscovered, &item.LastScanIndexed, &item.LastScanSkipped); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Path, &createdAt, &lastScanAt, &item.LastScanDiscovered, &item.LastScanIndexed, &item.LastScanUnchanged, &item.LastScanSkipped); err != nil {
 			return nil, fmt.Errorf("scan library: %w", err)
 		}
 		item.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
@@ -216,8 +218,8 @@ func (repository *SQLRepository) Get(ctx context.Context, id string) (Library, e
 	var item Library
 	var createdAt string
 	var lastScanAt sql.NullString
-	err := repository.db.QueryRowContext(ctx, `SELECT id, name, path, created_at, last_scan_at, last_scan_discovered, last_scan_indexed, last_scan_skipped FROM libraries WHERE id = ?`, id).
-		Scan(&item.ID, &item.Name, &item.Path, &createdAt, &lastScanAt, &item.LastScanDiscovered, &item.LastScanIndexed, &item.LastScanSkipped)
+	err := repository.db.QueryRowContext(ctx, `SELECT id, name, path, created_at, last_scan_at, last_scan_discovered, last_scan_indexed, last_scan_unchanged, last_scan_skipped FROM libraries WHERE id = ?`, id).
+		Scan(&item.ID, &item.Name, &item.Path, &createdAt, &lastScanAt, &item.LastScanDiscovered, &item.LastScanIndexed, &item.LastScanUnchanged, &item.LastScanSkipped)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Library{}, ErrNotFound
 	}
@@ -270,7 +272,7 @@ func (repository *SQLRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (repository *SQLRepository) RecordScan(ctx context.Context, id string, summary ScanSummary) error {
-	_, err := repository.db.ExecContext(ctx, `UPDATE libraries SET last_scan_at = ?, last_scan_discovered = ?, last_scan_indexed = ?, last_scan_skipped = ? WHERE id = ?`,
-		summary.FinishedAt.Format(time.RFC3339Nano), summary.Discovered, summary.Indexed, summary.Skipped, id)
+	_, err := repository.db.ExecContext(ctx, `UPDATE libraries SET last_scan_at = ?, last_scan_discovered = ?, last_scan_indexed = ?, last_scan_unchanged = ?, last_scan_skipped = ? WHERE id = ?`,
+		summary.FinishedAt.Format(time.RFC3339Nano), summary.Discovered, summary.Indexed, summary.Unchanged, summary.Skipped, id)
 	return err
 }

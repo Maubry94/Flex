@@ -59,7 +59,15 @@ type MetadataInput struct {
 type ScanResult struct {
 	Discovered int
 	Indexed    int
+	Unchanged  int
+	Removed    int
 	Skipped    int
+	Issues     []ScanIssue
+}
+
+type ScanIssue struct {
+	Filename string
+	Reason   string
 }
 
 type Home struct {
@@ -104,7 +112,7 @@ type Repository interface {
 	Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error)
 	UpdateMetadata(ctx context.Context, id string, input MetadataInput) error
 	Upsert(ctx context.Context, file File) error
-	DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) error
+	DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) (int, error)
 }
 
 type Scanner struct {
@@ -114,10 +122,11 @@ type Scanner struct {
 	logger     *slog.Logger
 	thumbnails *ThumbnailGenerator
 	transcoder *Transcoder
+	walkDir    func(string, fs.WalkDirFunc) error
 }
 
 func NewScanner(libraries LibrarySource, repository Repository, probe Probe, thumbnails *ThumbnailGenerator, transcoder *Transcoder, logger *slog.Logger) *Scanner {
-	return &Scanner{libraries: libraries, repository: repository, probe: probe, thumbnails: thumbnails, transcoder: transcoder, logger: logger}
+	return &Scanner{libraries: libraries, repository: repository, probe: probe, thumbnails: thumbnails, transcoder: transcoder, logger: logger, walkDir: filepath.WalkDir}
 }
 
 func (scanner *Scanner) List(ctx context.Context, libraryID string) ([]File, error) {
@@ -184,12 +193,24 @@ func (scanner *Scanner) Scan(ctx context.Context, libraryID string) (ScanResult,
 		return ScanResult{}, err
 	}
 
+	indexedFiles, err := scanner.repository.List(ctx, libraryID)
+	if err != nil {
+		return ScanResult{}, fmt.Errorf("list indexed media: %w", err)
+	}
+	indexedByPath := make(map[string]File, len(indexedFiles))
+	for _, item := range indexedFiles {
+		indexedByPath[item.Path] = item
+	}
+
 	result := ScanResult{}
 	seenPaths := make([]string, 0)
-	err = filepath.WalkDir(source.Path, func(path string, entry fs.DirEntry, walkErr error) error {
+	walkComplete := true
+	err = scanner.walkDir(source.Path, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			walkComplete = false
 			scanner.logger.Warn("media path cannot be read", "path", path, "error", walkErr)
 			result.Skipped++
+			result.addIssue(path, "Le fichier ou le dossier n’est pas accessible")
 			return nil
 		}
 		if ctx.Err() != nil {
@@ -204,27 +225,41 @@ func (scanner *Scanner) Scan(ctx context.Context, libraryID string) (ScanResult,
 		info, err := entry.Info()
 		if err != nil {
 			result.Skipped++
+			result.addIssue(path, "Les informations du fichier sont inaccessibles")
+			return nil
+		}
+		if indexed, exists := indexedByPath[path]; exists && indexed.SizeBytes == info.Size() && indexed.ModifiedAt.Equal(info.ModTime().UTC()) {
+			result.Unchanged++
 			return nil
 		}
 		technical, err := scanner.probe.Analyze(ctx, path)
 		if err != nil {
 			scanner.logger.Warn("media probe failed", "path", path, "error", err)
 			result.Skipped++
+			result.addIssue(path, "Le format ou le contenu de la vidéo n’a pas pu être lu")
 			return nil
 		}
 		now := time.Now().UTC()
-		id, err := randomID()
-		if err != nil {
-			return err
+		id, createdAt := "", now
+		if indexed, exists := indexedByPath[path]; exists {
+			id, createdAt = indexed.ID, indexed.CreatedAt
+		} else {
+			id, err = randomID()
+			if err != nil {
+				return err
+			}
 		}
 		item := File{
 			ID: id, LibraryID: libraryID, Path: path, Filename: filepath.Base(path),
 			SizeBytes: info.Size(), DurationMS: technical.DurationMS, Width: technical.Width,
 			Height: technical.Height, Container: technical.Container, VideoCodec: technical.VideoCodec,
-			AudioCodec: technical.AudioCodec, ModifiedAt: info.ModTime().UTC(), CreatedAt: now, UpdatedAt: now,
+			AudioCodec: technical.AudioCodec, ModifiedAt: info.ModTime().UTC(), CreatedAt: createdAt, UpdatedAt: now,
 		}
 		if err := scanner.repository.Upsert(ctx, item); err != nil {
 			return fmt.Errorf("index %s: %w", path, err)
+		}
+		if _, existed := indexedByPath[path]; existed {
+			scanner.clearCache(id)
 		}
 		result.Indexed++
 		return nil
@@ -232,15 +267,50 @@ func (scanner *Scanner) Scan(ctx context.Context, libraryID string) (ScanResult,
 	if err != nil {
 		return result, fmt.Errorf("walk library: %w", err)
 	}
-	if err := scanner.repository.DeleteMissing(ctx, libraryID, seenPaths); err != nil {
-		return result, fmt.Errorf("remove missing media: %w", err)
+	if walkComplete {
+		result.Removed, err = scanner.repository.DeleteMissing(ctx, libraryID, seenPaths)
+		if err != nil {
+			return result, fmt.Errorf("remove missing media: %w", err)
+		}
+		seen := make(map[string]bool, len(seenPaths))
+		for _, path := range seenPaths {
+			seen[path] = true
+		}
+		for _, indexed := range indexedFiles {
+			if !seen[indexed.Path] {
+				scanner.clearCache(indexed.ID)
+			}
+		}
+	} else {
+		scanner.logger.Warn("missing media cleanup skipped because the library could not be fully read", "library_id", libraryID)
 	}
 	if err := scanner.libraries.RecordScan(ctx, libraryID, library.ScanSummary{
-		FinishedAt: time.Now().UTC(), Discovered: result.Discovered, Indexed: result.Indexed, Skipped: result.Skipped,
+		FinishedAt: time.Now().UTC(), Discovered: result.Discovered, Indexed: result.Indexed, Unchanged: result.Unchanged, Skipped: result.Skipped,
 	}); err != nil {
 		return result, fmt.Errorf("record scan result: %w", err)
 	}
 	return result, nil
+}
+
+func (scanner *Scanner) clearCache(mediaID string) {
+	if scanner.thumbnails != nil {
+		if err := scanner.thumbnails.Remove(mediaID); err != nil {
+			scanner.logger.Warn("remove stale thumbnail", "media_id", mediaID, "error", err)
+		}
+	}
+	if scanner.transcoder != nil {
+		if err := scanner.transcoder.Remove(mediaID); err != nil {
+			scanner.logger.Warn("remove stale transcode", "media_id", mediaID, "error", err)
+		}
+	}
+}
+
+func (result *ScanResult) addIssue(path string, reason string) {
+	const maximumReportedIssues = 100
+	if len(result.Issues) >= maximumReportedIssues {
+		return
+	}
+	result.Issues = append(result.Issues, ScanIssue{Filename: filepath.Base(path), Reason: reason})
 }
 
 func isSupported(path string) bool {
@@ -462,17 +532,23 @@ func (repository *SQLRepository) UpdateMetadata(ctx context.Context, id string, 
 	return err
 }
 
-func (repository *SQLRepository) DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) error {
+func (repository *SQLRepository) DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) (int, error) {
+	var result sql.Result
+	var err error
 	if len(existingPaths) == 0 {
-		_, err := repository.db.ExecContext(ctx, `DELETE FROM media_files WHERE library_id = ?`, libraryID)
-		return err
+		result, err = repository.db.ExecContext(ctx, `DELETE FROM media_files WHERE library_id = ?`, libraryID)
+	} else {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(existingPaths)), ",")
+		arguments := make([]any, 0, len(existingPaths)+1)
+		arguments = append(arguments, libraryID)
+		for _, path := range existingPaths {
+			arguments = append(arguments, path)
+		}
+		result, err = repository.db.ExecContext(ctx, `DELETE FROM media_files WHERE library_id = ? AND path NOT IN (`+placeholders+`)`, arguments...)
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(existingPaths)), ",")
-	arguments := make([]any, 0, len(existingPaths)+1)
-	arguments = append(arguments, libraryID)
-	for _, path := range existingPaths {
-		arguments = append(arguments, path)
+	if err != nil {
+		return 0, err
 	}
-	_, err := repository.db.ExecContext(ctx, `DELETE FROM media_files WHERE library_id = ? AND path NOT IN (`+placeholders+`)`, arguments...)
-	return err
+	count, err := result.RowsAffected()
+	return int(count), err
 }

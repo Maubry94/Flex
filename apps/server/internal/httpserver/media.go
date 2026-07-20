@@ -60,9 +60,17 @@ type homeResponse struct {
 }
 
 type scanResponse struct {
-	Discovered int `json:"discovered"`
-	Indexed    int `json:"indexed"`
-	Skipped    int `json:"skipped"`
+	Discovered int                 `json:"discovered"`
+	Indexed    int                 `json:"indexed"`
+	Unchanged  int                 `json:"unchanged"`
+	Removed    int                 `json:"removed"`
+	Skipped    int                 `json:"skipped"`
+	Issues     []scanIssueResponse `json:"issues"`
+}
+
+type scanIssueResponse struct {
+	Filename string `json:"filename"`
+	Reason   string `json:"reason"`
 }
 
 type playbackResponse struct {
@@ -356,11 +364,7 @@ func scanLibraryHandler(service scanService, logger *slog.Logger) http.HandlerFu
 			return
 		}
 		response.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(response).Encode(scanResponse{
-			Discovered: result.Discovered,
-			Indexed:    result.Indexed,
-			Skipped:    result.Skipped,
-		})
+		_ = json.NewEncoder(response).Encode(scanResultToResponse(&result))
 	}
 }
 
@@ -369,11 +373,24 @@ func scanStatusHandler(service scanService) http.HandlerFunc {
 		status := service.Status(request.PathValue("libraryID"))
 		response.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(response).Encode(struct {
-			State     string     `json:"state"`
-			StartedAt *time.Time `json:"startedAt,omitempty"`
-			LastError string     `json:"lastError,omitempty"`
-		}{State: status.State, StartedAt: status.StartedAt, LastError: status.LastError})
+			State      string        `json:"state"`
+			StartedAt  *time.Time    `json:"startedAt,omitempty"`
+			FinishedAt *time.Time    `json:"finishedAt,omitempty"`
+			Result     *scanResponse `json:"result,omitempty"`
+			LastError  string        `json:"lastError,omitempty"`
+		}{State: status.State, StartedAt: status.StartedAt, FinishedAt: status.FinishedAt, Result: scanResultToResponse(status.Result), LastError: status.LastError})
 	}
+}
+
+func scanResultToResponse(result *media.ScanResult) *scanResponse {
+	if result == nil {
+		return nil
+	}
+	issues := make([]scanIssueResponse, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		issues = append(issues, scanIssueResponse{Filename: issue.Filename, Reason: issue.Reason})
+	}
+	return &scanResponse{Discovered: result.Discovered, Indexed: result.Indexed, Unchanged: result.Unchanged, Removed: result.Removed, Skipped: result.Skipped, Issues: issues}
 }
 
 func mediaToResponse(item media.File) mediaResponse {

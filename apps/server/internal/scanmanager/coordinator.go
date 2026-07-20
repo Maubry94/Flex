@@ -17,7 +17,7 @@ import (
 	"flex.local/server/internal/media"
 )
 
-const debounceDelay = 2 * time.Second
+const defaultDebounceDelay = 2 * time.Second
 
 type Scanner interface {
 	Scan(ctx context.Context, libraryID string) (media.ScanResult, error)
@@ -28,9 +28,11 @@ type LibrarySource interface {
 }
 
 type Status struct {
-	State     string
-	StartedAt *time.Time
-	LastError string
+	State      string
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	Result     *media.ScanResult
+	LastError  string
 }
 
 type job struct {
@@ -55,6 +57,7 @@ type Coordinator struct {
 	pending  map[string]bool
 	statuses map[string]Status
 	timers   map[string]*time.Timer
+	debounce time.Duration
 }
 
 func New(mediaRoot string, libraries LibrarySource, scanner Scanner, logger *slog.Logger) *Coordinator {
@@ -67,6 +70,7 @@ func New(mediaRoot string, libraries LibrarySource, scanner Scanner, logger *slo
 		pending:   make(map[string]bool),
 		statuses:  make(map[string]Status),
 		timers:    make(map[string]*time.Timer),
+		debounce:  defaultDebounceDelay,
 	}
 }
 
@@ -159,12 +163,15 @@ func (coordinator *Coordinator) startJob(libraryID string, scanAgainIfRunning bo
 		defer coordinator.wg.Done()
 		current.result, current.err = coordinator.scanner.Scan(coordinator.ctx, libraryID)
 
-		status := Status{State: "idle"}
+		finishedAt := time.Now().UTC()
+		status := Status{State: "completed", FinishedAt: &finishedAt, Result: &current.result}
 		if current.err != nil {
+			status.State = "failed"
+			status.Result = nil
 			status.LastError = current.err.Error()
 			coordinator.logger.Error("automatic library scan failed", "library_id", libraryID, "error", current.err)
 		} else {
-			coordinator.logger.Info("library scan completed", "library_id", libraryID, "discovered", current.result.Discovered, "indexed", current.result.Indexed, "skipped", current.result.Skipped)
+			coordinator.logger.Info("library scan completed", "library_id", libraryID, "discovered", current.result.Discovered, "indexed", current.result.Indexed, "unchanged", current.result.Unchanged, "removed", current.result.Removed, "skipped", current.result.Skipped)
 		}
 
 		coordinator.mu.Lock()
@@ -228,10 +235,13 @@ func (coordinator *Coordinator) schedule(libraryID string) {
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
 	if timer, exists := coordinator.timers[libraryID]; exists {
-		timer.Reset(debounceDelay)
+		timer.Reset(coordinator.debounce)
 		return
 	}
-	coordinator.timers[libraryID] = time.AfterFunc(debounceDelay, func() {
+	if _, scanning := coordinator.jobs[libraryID]; !scanning {
+		coordinator.statuses[libraryID] = Status{State: "pending"}
+	}
+	coordinator.timers[libraryID] = time.AfterFunc(coordinator.debounce, func() {
 		coordinator.mu.Lock()
 		delete(coordinator.timers, libraryID)
 		coordinator.mu.Unlock()

@@ -110,6 +110,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		);
 		CREATE INDEX idx_collection_media_media_id ON collection_media(media_id);
 		`,
+		`
+		ALTER TABLE libraries ADD COLUMN last_scan_unchanged INTEGER NOT NULL DEFAULT 0;
+		`,
 	}
 
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {

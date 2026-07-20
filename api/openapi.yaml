@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Flex API
-  version: 0.3.0
+  version: 0.4.0
   description: API du serveur multimédia personnel Flex.
 servers:
   - url: /api
@@ -580,7 +580,7 @@ components:
     Library:
       type: object
       additionalProperties: false
-      required: [id, name, path, createdAt, lastScanAt, lastScanDiscovered, lastScanIndexed, lastScanSkipped]
+      required: [id, name, path, createdAt, lastScanAt, lastScanDiscovered, lastScanIndexed, lastScanUnchanged, lastScanSkipped]
       properties:
         id:
           type: string
@@ -602,6 +602,9 @@ components:
         lastScanIndexed:
           type: integer
           minimum: 0
+        lastScanUnchanged:
+          type: integer
+          minimum: 0
         lastScanSkipped:
           type: integer
           minimum: 0
@@ -619,7 +622,7 @@ components:
     ScanResult:
       type: object
       additionalProperties: false
-      required: [discovered, indexed, skipped]
+      required: [discovered, indexed, unchanged, removed, skipped, issues]
       properties:
         discovered:
           type: integer
@@ -627,9 +630,29 @@ components:
         indexed:
           type: integer
           minimum: 0
+        unchanged:
+          type: integer
+          minimum: 0
+        removed:
+          type: integer
+          minimum: 0
         skipped:
           type: integer
           minimum: 0
+        issues:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ScanIssue"
+    ScanIssue:
+      type: object
+      additionalProperties: false
+      required: [filename, reason]
+      properties:
+        filename:
+          type: string
+        reason:
+          type: string
     ScanStatus:
       type: object
       additionalProperties: false
@@ -637,10 +660,15 @@ components:
       properties:
         state:
           type: string
-          enum: [idle, scanning]
+          enum: [idle, pending, scanning, completed, failed]
         startedAt:
           type: string
           format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        result:
+          $ref: "#/components/schemas/ScanResult"
         lastError:
           type: string
     FolderAssignment:

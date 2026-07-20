@@ -30,6 +30,7 @@ const selectionMode = ref(false)
 const selectedIDs = ref<string[]>([])
 const selectedCollectionID = ref('')
 const isBulkUpdating = ref(false)
+const scanWasAutomatic = ref(false)
 
 const librariesQuery = useQuery({ queryKey: ['libraries'], queryFn: ({ signal }) => getLibraries(signal) })
 const library = computed(() => librariesQuery.data.value?.find((item) => item.id === libraryID.value))
@@ -58,18 +59,30 @@ const scanMutation = useMutation({
   onError: (error) => toast.error(error instanceof Error ? error.message : 'L’analyse a échoué'),
 })
 const isScanning = computed(
-  () => scanMutation.isPending.value || scanStatusQuery.data.value?.state === 'scanning',
+  () => scanMutation.isPending.value || ['pending', 'scanning'].includes(scanStatusQuery.data.value?.state ?? ''),
 )
 
 watch(
   () => scanStatusQuery.data.value?.state,
   async (state, previousState) => {
-    if (state === 'idle' && previousState === 'scanning') {
+    if ((state === 'pending' || state === 'scanning') && previousState !== 'pending' && previousState !== 'scanning') {
+      scanWasAutomatic.value = !scanMutation.isPending.value
+    }
+    if ((state === 'completed' || state === 'failed') && (previousState === 'pending' || previousState === 'scanning')) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['media', libraryID.value] }),
         queryClient.invalidateQueries({ queryKey: ['libraries'] }),
         queryClient.invalidateQueries({ queryKey: ['home'] }),
       ])
+      if (scanWasAutomatic.value) {
+        const result = scanStatusQuery.data.value?.result
+        if (state === 'completed') {
+          toast.success(result ? `Bibliothèque actualisée · ${String(result.indexed)} vidéo${result.indexed === 1 ? '' : 's'} ajoutée${result.indexed === 1 ? '' : 's'} ou modifiée${result.indexed === 1 ? '' : 's'}` : 'Bibliothèque actualisée')
+        } else {
+          toast.error('L’actualisation automatique a échoué')
+        }
+      }
+      scanWasAutomatic.value = false
     }
   },
 )

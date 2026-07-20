@@ -61,3 +61,16 @@ func (generator *ThumbnailGenerator) Generate(ctx context.Context, item File) (s
 	}
 	return target, nil
 }
+
+func (generator *ThumbnailGenerator) Remove(mediaID string) error {
+	generator.mutex.Lock()
+	defer generator.mutex.Unlock()
+	if mediaID == "" || filepath.Base(mediaID) != mediaID {
+		return fmt.Errorf("invalid media id")
+	}
+	err := os.Remove(filepath.Join(generator.cachePath, mediaID+".jpg"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove thumbnail cache: %w", err)
+	}
+	return nil
+}

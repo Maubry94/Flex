@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { toTypedSchema } from '@vee-validate/zod'
-import { ArrowLeft, CircleAlert, LoaderCircle, Trash2 } from '@lucide/vue'
+import { ArrowLeft, CircleAlert, LoaderCircle, RefreshCw, Trash2 } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useForm } from 'vee-validate'
 import { useRoute, useRouter } from 'vue-router'
@@ -14,6 +14,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { ApiError, deleteLibrary, getLibraries, updateLibrary } from '@/lib/api/libraries'
+import { getScanStatus, scanLibrary } from '@/lib/api/media'
 import { asForwardedProps } from '@/lib/utils'
 
 const route = useRoute()
@@ -28,7 +29,14 @@ const libraryFormSchema = toTypedSchema(z.object({
 const libraryForm = useForm({ validationSchema: libraryFormSchema })
 
 const librariesQuery = useQuery({ queryKey: ['libraries'], queryFn: ({ signal }) => getLibraries(signal) })
+const scanStatusQuery = useQuery({
+  queryKey: computed(() => ['scan-status', libraryID.value]),
+  queryFn: ({ signal }) => getScanStatus(libraryID.value, signal),
+  refetchInterval: 2_000,
+})
 const library = computed(() => librariesQuery.data.value?.find((item) => item.id === libraryID.value))
+const latestScan = computed(() => scanStatusQuery.data.value?.result)
+const isScanning = computed(() => ['pending', 'scanning'].includes(scanStatusQuery.data.value?.state ?? ''))
 
 watch(library, (value) => {
   if (!value) return
@@ -65,6 +73,19 @@ const deleteMutation = useMutation({
     await router.push({ name: 'libraries' })
   },
   onError: (error) => toast.error(error instanceof Error ? error.message : 'Impossible de supprimer la bibliothèque'),
+})
+
+const scanMutation = useMutation({
+  mutationFn: () => scanLibrary(libraryID.value),
+  onSuccess: async (result) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['libraries'] }),
+      queryClient.invalidateQueries({ queryKey: ['scan-status', libraryID.value] }),
+      queryClient.invalidateQueries({ queryKey: ['media', libraryID.value] }),
+    ])
+    toast.success(result.issues.length ? 'Analyse terminée, certains fichiers restent ignorés' : 'Analyse terminée sans erreur')
+  },
+  onError: (error) => toast.error(error instanceof Error ? error.message : 'L’analyse a échoué'),
 })
 
 const errorMessage = computed(() => {
@@ -116,11 +137,27 @@ function formatDate(value: string): string {
           <CardContent class="p-5 sm:p-6">
             <p v-if="library.lastScanAt" class="text-sm text-muted-foreground">{{ formatDate(library.lastScanAt) }}</p>
             <p v-else class="text-sm text-muted-foreground">Cette bibliothèque n'a pas encore été analysée depuis l'ajout du suivi.</p>
-            <dl v-if="library.lastScanAt" class="mt-5 grid grid-cols-3 gap-2 text-sm sm:gap-4">
-            <div><dt class="text-xs text-muted-foreground">Détectées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanDiscovered }}</dd></div>
-            <div><dt class="text-xs text-muted-foreground">Indexées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanIndexed }}</dd></div>
-            <div><dt class="text-xs text-muted-foreground">Ignorées</dt><dd class="mt-1 text-lg font-semibold">{{ library.lastScanSkipped }}</dd></div>
+            <dl v-if="library.lastScanAt" class="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
+            <div><dt class="text-xs text-muted-foreground">Détectées</dt><dd class="mt-1 text-lg font-semibold">{{ latestScan?.discovered ?? library.lastScanDiscovered }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Actualisées</dt><dd class="mt-1 text-lg font-semibold">{{ latestScan?.indexed ?? library.lastScanIndexed }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Inchangées</dt><dd class="mt-1 text-lg font-semibold">{{ latestScan?.unchanged ?? library.lastScanUnchanged }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Supprimées</dt><dd class="mt-1 text-lg font-semibold">{{ latestScan?.removed ?? 0 }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Ignorées</dt><dd class="mt-1 text-lg font-semibold">{{ latestScan?.skipped ?? library.lastScanSkipped }}</dd></div>
             </dl>
+          </CardContent>
+        </Card>
+
+        <Card v-if="latestScan?.issues.length" class="mt-6 gap-0 rounded-2xl border-amber-400/15 bg-amber-400/2.5 py-0 shadow-none">
+          <CardHeader class="p-5 pb-0 sm:p-6 sm:pb-0"><CardTitle class="text-amber-200">Fichiers ignorés</CardTitle></CardHeader>
+          <CardContent class="p-5 sm:p-6">
+            <p class="text-sm text-muted-foreground">Ces fichiers n’ont pas pu être ajoutés pendant la dernière analyse.</p>
+            <ul class="mt-4 divide-y divide-white/8 rounded-xl border border-white/8">
+              <li v-for="issue in latestScan.issues" :key="`${issue.filename}-${issue.reason}`" class="px-4 py-3">
+                <p class="break-all text-sm font-medium">{{ issue.filename }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">{{ issue.reason }}</p>
+              </li>
+            </ul>
+            <Button class="mt-5" variant="secondary" :disabled="isScanning || scanMutation.isPending.value" @click="scanMutation.mutate()"><RefreshCw :class="(isScanning || scanMutation.isPending.value) && 'animate-spin'" />Relancer l’analyse</Button>
           </CardContent>
         </Card>
 

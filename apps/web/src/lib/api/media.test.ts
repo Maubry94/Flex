@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getFavorites, searchMedia, updateMedia } from './media'
+import { getFavorites, getScanStatus, searchMedia, updateMedia } from './media'
 
 const searchResult = {
   id: 'media-1',
@@ -84,5 +84,26 @@ describe('getFavorites', () => {
     )
 
     await expect(getFavorites()).rejects.toThrow('invalide')
+  })
+})
+
+describe('getScanStatus', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('returns a completed automatic scan with its summary', async () => {
+    const status = {
+      state: 'completed',
+      finishedAt: '2026-07-20T19:00:00Z',
+      result: { discovered: 3, indexed: 2, unchanged: 0, removed: 1, skipped: 1, issues: [{ filename: 'broken.mov', reason: 'Format illisible' }] },
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(status)))
+
+    await expect(getScanStatus('library-1')).resolves.toEqual(status)
+  })
+
+  it('accepts a pending scan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ state: 'pending' })))
+
+    await expect(getScanStatus('library-1')).resolves.toEqual({ state: 'pending' })
   })
 })

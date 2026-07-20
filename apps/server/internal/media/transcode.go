@@ -85,3 +85,26 @@ func (transcoder *Transcoder) Generate(ctx context.Context, item File) (string, 
 	}
 	return directory, nil
 }
+
+func (transcoder *Transcoder) Remove(mediaID string) error {
+	transcoder.mutex.Lock()
+	defer transcoder.mutex.Unlock()
+	if mediaID == "" || filepath.Base(mediaID) != mediaID {
+		return fmt.Errorf("invalid media id")
+	}
+	entries, err := os.ReadDir(transcoder.cachePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read transcode cache: %w", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), mediaID+"-") {
+			if err := os.RemoveAll(filepath.Join(transcoder.cachePath, entry.Name())); err != nil {
+				return fmt.Errorf("remove transcode cache: %w", err)
+			}
+		}
+	}
+	return nil
+}

@@ -28,12 +28,22 @@ export interface UpdateMediaInput {
 export interface ScanResult {
   discovered: number
   indexed: number
+  unchanged: number
+  removed: number
   skipped: number
+  issues: ScanIssue[]
+}
+
+export interface ScanIssue {
+  filename: string
+  reason: string
 }
 
 export interface ScanStatus {
-  state: 'idle' | 'scanning'
+  state: 'idle' | 'pending' | 'scanning' | 'completed' | 'failed'
   startedAt?: string
+  finishedAt?: string
+  result?: ScanResult
   lastError?: string
 }
 
@@ -83,15 +93,21 @@ function isScanResult(value: unknown): value is ScanResult {
     isRecord(value) &&
     typeof value.discovered === 'number' &&
     typeof value.indexed === 'number' &&
-    typeof value.skipped === 'number'
+    typeof value.unchanged === 'number' &&
+    typeof value.removed === 'number' &&
+    typeof value.skipped === 'number' &&
+    Array.isArray(value.issues) &&
+    value.issues.every((issue) => isRecord(issue) && typeof issue.filename === 'string' && typeof issue.reason === 'string')
   )
 }
 
 function isScanStatus(value: unknown): value is ScanStatus {
   return (
     isRecord(value) &&
-    (value.state === 'idle' || value.state === 'scanning') &&
+    ['idle', 'pending', 'scanning', 'completed', 'failed'].includes(String(value.state)) &&
     (value.startedAt === undefined || typeof value.startedAt === 'string') &&
+    (value.finishedAt === undefined || typeof value.finishedAt === 'string') &&
+    (value.result === undefined || isScanResult(value.result)) &&
     (value.lastError === undefined || typeof value.lastError === 'string')
   )
 }
