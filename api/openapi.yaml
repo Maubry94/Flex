@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Flex API
-  version: 0.2.0
+  version: 0.3.0
   description: API du serveur multimédia personnel Flex.
 servers:
   - url: /api
@@ -102,6 +102,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScanStatus"
+  /libraries/{libraryId}/folders:
+    parameters:
+      - $ref: "#/components/parameters/LibraryId"
+    get:
+      operationId: listLibraryFolders
+      summary: Liste les dossiers relatifs des vidéos d'une bibliothèque.
+      responses:
+        "200":
+          description: Association entre chaque vidéo et son dossier relatif.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FolderAssignment"
   /libraries/{libraryId}:
     parameters:
       - $ref: "#/components/parameters/LibraryId"
@@ -151,6 +171,145 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/MediaFile"
+  /collections:
+    get:
+      operationId: listCollections
+      summary: Liste les collections personnelles.
+      responses:
+        "200":
+          description: Liste des collections.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionList"
+    post:
+      operationId: createCollection
+      summary: Crée une collection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollectionRequest"
+      responses:
+        "201":
+          description: Collection créée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Collection"
+        "409":
+          description: Une collection avec ce nom existe déjà.
+        "422":
+          description: Nom invalide.
+  /collections/{collectionId}:
+    parameters:
+      - name: collectionId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateCollection
+      summary: Renomme une collection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollectionRequest"
+      responses:
+        "200":
+          description: Collection modifiée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Collection"
+        "404":
+          description: Collection introuvable.
+        "409":
+          description: Une collection avec ce nom existe déjà.
+        "422":
+          description: Nom invalide.
+    delete:
+      operationId: deleteCollection
+      summary: Supprime une collection sans supprimer ses vidéos.
+      responses:
+        "204":
+          description: Collection supprimée.
+        "404":
+          description: Collection introuvable.
+  /collections/{collectionId}/media:
+    parameters:
+      - name: collectionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listCollectionMedia
+      summary: Liste les identifiants des vidéos d'une collection.
+      responses:
+        "200":
+          description: Identifiants des vidéos.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [mediaIds]
+                properties:
+                  mediaIds:
+                    type: array
+                    items:
+                      type: string
+  /collections/{collectionId}/media/{mediaId}:
+    parameters:
+      - name: collectionId
+        in: path
+        required: true
+        schema:
+          type: string
+      - $ref: "#/components/parameters/MediaId"
+    delete:
+      operationId: removeMediaFromCollection
+      summary: Retire une vidéo d'une collection sans supprimer la vidéo.
+      responses:
+        "204":
+          description: Vidéo retirée de la collection.
+        "404":
+          description: Association introuvable.
+  /media/{mediaId}/collections:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: listMediaCollections
+      summary: Liste les collections contenant une vidéo.
+      responses:
+        "200":
+          description: Collections de la vidéo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionList"
+    put:
+      operationId: setMediaCollections
+      summary: Remplace les collections associées à une vidéo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetMediaCollectionsRequest"
+      responses:
+        "200":
+          description: Associations enregistrées.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionList"
+        "404":
+          description: Vidéo introuvable.
   /media/{mediaId}:
     parameters:
       - $ref: "#/components/parameters/MediaId"
@@ -221,6 +380,90 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/MediaSearchResult"
+  /tags:
+    get:
+      operationId: listTags
+      summary: Liste les tags disponibles.
+      responses:
+        "200":
+          description: Liste des tags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+    post:
+      operationId: createTag
+      summary: Crée un tag personnalisé.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTagRequest"
+      responses:
+        "201":
+          description: Tag créé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "409":
+          description: Un tag avec ce nom existe déjà.
+        "422":
+          description: Nom ou couleur invalide.
+  /tag-assignments:
+    get:
+      operationId: listTagAssignments
+      summary: Liste les attributions de tags à toutes les vidéos.
+      responses:
+        "200":
+          description: Attributions de tags.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TagAssignment"
+  /media/{mediaId}/tags:
+    parameters:
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      operationId: listMediaTags
+      summary: Liste les tags attribués à une vidéo.
+      responses:
+        "200":
+          description: Tags de la vidéo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+        "404":
+          description: Vidéo introuvable.
+    put:
+      operationId: setMediaTags
+      summary: Remplace les tags attribués à une vidéo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetMediaTagsRequest"
+      responses:
+        "200":
+          description: Tags enregistrés.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+        "404":
+          description: Vidéo introuvable.
+        "422":
+          description: Sélection invalide.
   /media/{mediaId}/thumbnail:
     parameters:
       - $ref: "#/components/parameters/MediaId"
@@ -400,6 +643,15 @@ components:
           format: date-time
         lastError:
           type: string
+    FolderAssignment:
+      type: object
+      additionalProperties: false
+      required: [mediaId, folder]
+      properties:
+        mediaId:
+          type: string
+        folder:
+          type: string
     MediaList:
       type: object
       additionalProperties: false
@@ -409,6 +661,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MediaFile"
+    Collection:
+      type: object
+      additionalProperties: false
+      required: [id, name, mediaCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mediaCount:
+          type: integer
+          minimum: 0
+    CollectionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Collection"
+    CreateCollectionRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    SetMediaCollectionsRequest:
+      type: object
+      additionalProperties: false
+      required: [collectionIds]
+      properties:
+        collectionIds:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
     MediaFile:
       type: object
       required: [id, libraryId, filename, sizeBytes, durationMs, width, height, container, videoCodec, audioCodec, modifiedAt, progressMs, completed, title, description, recordedAt, favorite]
@@ -482,6 +775,59 @@ components:
             - type: "null"
         favorite:
           type: boolean
+    Tag:
+      type: object
+      additionalProperties: false
+      required: [id, name, color]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+    TagList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+    TagAssignment:
+      type: object
+      additionalProperties: false
+      required: [mediaId, tag]
+      properties:
+        mediaId:
+          type: string
+        tag:
+          $ref: "#/components/schemas/Tag"
+    CreateTagRequest:
+      type: object
+      additionalProperties: false
+      required: [name, color]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+    SetMediaTagsRequest:
+      type: object
+      additionalProperties: false
+      required: [tagIds]
+      properties:
+        tagIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
     PlaybackInfo:
       type: object
       additionalProperties: false

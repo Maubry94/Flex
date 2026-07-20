@@ -83,6 +83,33 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			updated_at TEXT NOT NULL
 		);
 		`,
+		`
+		CREATE TABLE tags (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			color TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+		CREATE TABLE media_tags (
+			media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+			tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+			PRIMARY KEY (media_id, tag_id)
+		);
+		CREATE INDEX idx_media_tags_tag_id ON media_tags(tag_id);
+		`,
+		`
+		CREATE TABLE collections (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			created_at TEXT NOT NULL
+		);
+		CREATE TABLE collection_media (
+			collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+			media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+			PRIMARY KEY (collection_id, media_id)
+		);
+		CREATE INDEX idx_collection_media_media_id ON collection_media(media_id);
+		`,
 	}
 
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {

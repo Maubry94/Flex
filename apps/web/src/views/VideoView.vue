@@ -7,12 +7,14 @@ import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 
 import VideoMetadataDialog from '@/components/media/VideoMetadataDialog.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { getMediaByID, getPlayback, thumbnailURL, updateMedia } from '@/lib/api/media'
 import type { MediaFile, PlaybackInfo } from '@/lib/api/media'
 import { getProgress, saveProgress } from '@/lib/api/progress'
+import { getTagAssignments } from '@/lib/api/tags'
 
 const route = useRoute()
 const queryClient = useQueryClient()
@@ -42,6 +44,10 @@ const progressQuery = useQuery({
   queryKey: computed(() => ['progress', mediaID.value]),
   queryFn: ({ signal }) => getProgress(mediaID.value, signal),
 })
+const assignmentsQuery = useQuery({ queryKey: ['tag-assignments'], queryFn: ({ signal }) => getTagAssignments(signal) })
+const itemTags = computed(() => (assignmentsQuery.data.value ?? [])
+  .filter((assignment) => assignment.mediaId === mediaID.value)
+  .map((assignment) => assignment.tag))
 const favoriteMutation = useMutation({
   mutationFn: async () => {
     const item = mediaQuery.data.value
@@ -349,6 +355,9 @@ function formatRecordedDate(value: string): string {
           <p v-if="mediaQuery.data.value.description" class="mt-3 max-w-3xl whitespace-pre-line text-sm leading-6 text-muted-foreground">{{ mediaQuery.data.value.description }}</p>
           <p v-else class="mt-3 text-sm text-muted-foreground">Vidéo personnelle</p>
           <p v-if="mediaQuery.data.value.recordedAt" class="mt-2 text-xs text-muted-foreground">Enregistrée le {{ formatRecordedDate(mediaQuery.data.value.recordedAt) }}</p>
+          <div v-if="itemTags.length" class="mt-4 flex flex-wrap gap-2">
+            <Badge v-for="tag in itemTags" :key="tag.id" variant="outline" :style="{ borderColor: tag.color, backgroundColor: `${tag.color}1f` }">{{ tag.name }}</Badge>
+          </div>
           <span v-if="playbackQuery.data.value" class="mt-4 inline-flex rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             {{ playbackQuery.data.value.mode === 'direct' ? 'Lecture directe' : 'Conversion HLS' }}
           </span>

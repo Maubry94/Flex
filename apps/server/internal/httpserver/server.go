@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"flex.local/server/internal/collection"
 	"flex.local/server/internal/config"
 	"flex.local/server/internal/library"
 	"flex.local/server/internal/media"
 	"flex.local/server/internal/playback"
 	"flex.local/server/internal/scanmanager"
+	"flex.local/server/internal/tag"
 )
 
 type healthResponse struct {
@@ -35,6 +37,7 @@ type mediaService interface {
 	Get(ctx context.Context, id string) (media.File, error)
 	Home(ctx context.Context) (media.Home, error)
 	Search(ctx context.Context, query string) ([]media.SearchResult, error)
+	Folders(ctx context.Context, libraryID string) ([]media.FolderAssignment, error)
 	UpdateMetadata(ctx context.Context, id string, input media.MetadataInput) (media.File, error)
 	Thumbnail(ctx context.Context, id string) (string, error)
 	Transcode(ctx context.Context, id string) (string, error)
@@ -51,7 +54,25 @@ type playbackService interface {
 	Save(ctx context.Context, mediaID string, positionMS int64, durationMS int64) (playback.Progress, error)
 }
 
-func New(cfg config.Config, logger *slog.Logger, libraries libraryService, mediaFiles mediaService, scans scanService, progress playbackService) http.Handler {
+type tagService interface {
+	List(ctx context.Context) ([]tag.Tag, error)
+	Assignments(ctx context.Context) ([]tag.Assignment, error)
+	Create(ctx context.Context, name string, color string) (tag.Tag, error)
+	ListForMedia(ctx context.Context, mediaID string) ([]tag.Tag, error)
+	SetForMedia(ctx context.Context, mediaID string, tagIDs []string) ([]tag.Tag, error)
+}
+type collectionService interface {
+	List(context.Context) ([]collection.Collection, error)
+	Create(context.Context, string) (collection.Collection, error)
+	Update(context.Context, string, string) (collection.Collection, error)
+	Delete(context.Context, string) error
+	ListForMedia(context.Context, string) ([]collection.Collection, error)
+	SetForMedia(context.Context, string, []string) ([]collection.Collection, error)
+	MediaIDs(context.Context, string) ([]string, error)
+	RemoveMedia(context.Context, string, string) error
+}
+
+func New(cfg config.Config, logger *slog.Logger, libraries libraryService, mediaFiles mediaService, scans scanService, progress playbackService, tags tagService, collections collectionService) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", healthHandler)
 	mux.HandleFunc("GET /api/libraries", listLibrariesHandler(libraries, logger))
@@ -60,6 +81,7 @@ func New(cfg config.Config, logger *slog.Logger, libraries libraryService, media
 	mux.HandleFunc("DELETE /api/libraries/{libraryID}", deleteLibraryHandler(libraries, logger))
 	mux.HandleFunc("GET /api/libraries/{libraryID}/scan", scanStatusHandler(scans))
 	mux.HandleFunc("POST /api/libraries/{libraryID}/scan", scanLibraryHandler(scans, logger))
+	mux.HandleFunc("GET /api/libraries/{libraryID}/folders", libraryFoldersHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media", listMediaHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/favorites", favoritesHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/search", searchMediaHandler(mediaFiles, logger))
@@ -72,6 +94,19 @@ func New(cfg config.Config, logger *slog.Logger, libraries libraryService, media
 	mux.HandleFunc("GET /api/home", homeHandler(mediaFiles, logger))
 	mux.HandleFunc("GET /api/media/{mediaID}/progress", getProgressHandler(progress, logger))
 	mux.HandleFunc("PUT /api/media/{mediaID}/progress", saveProgressHandler(progress, logger))
+	mux.HandleFunc("GET /api/tags", listTagsHandler(tags, logger))
+	mux.HandleFunc("POST /api/tags", createTagHandler(tags, logger))
+	mux.HandleFunc("GET /api/tag-assignments", listTagAssignmentsHandler(tags, logger))
+	mux.HandleFunc("GET /api/media/{mediaID}/tags", listMediaTagsHandler(tags, logger))
+	mux.HandleFunc("PUT /api/media/{mediaID}/tags", setMediaTagsHandler(tags, logger))
+	mux.HandleFunc("GET /api/collections", listCollectionsHandler(collections, logger))
+	mux.HandleFunc("POST /api/collections", createCollectionHandler(collections, logger))
+	mux.HandleFunc("PATCH /api/collections/{collectionID}", updateCollectionHandler(collections, logger))
+	mux.HandleFunc("DELETE /api/collections/{collectionID}", deleteCollectionHandler(collections, logger))
+	mux.HandleFunc("GET /api/collections/{collectionID}/media", collectionMediaHandler(collections, logger))
+	mux.HandleFunc("DELETE /api/collections/{collectionID}/media/{mediaID}", removeCollectionMediaHandler(collections, logger))
+	mux.HandleFunc("GET /api/media/{mediaID}/collections", listMediaCollectionsHandler(collections, logger))
+	mux.HandleFunc("PUT /api/media/{mediaID}/collections", setMediaCollectionsHandler(collections, logger))
 	mux.Handle("/", spaHandler(cfg.WebPath))
 
 	return requestLogger(logger, secureHeaders(mux))

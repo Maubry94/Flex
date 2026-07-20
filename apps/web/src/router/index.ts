@@ -1,44 +1,39 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import LibrariesView from '@/views/LibrariesView.vue'
-import LibraryView from '@/views/LibraryView.vue'
-import VideoView from '@/views/VideoView.vue'
-import HomeView from '@/views/HomeView.vue'
-import LibrarySettingsView from '@/views/LibrarySettingsView.vue'
-import FavoritesView from '@/views/FavoritesView.vue'
-
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
       name: 'home',
-      component: HomeView,
+      component: () => import('@/views/HomeView.vue'),
     },
     {
       path: '/libraries',
       name: 'libraries',
-      component: LibrariesView,
+      component: () => import('@/views/LibrariesView.vue'),
     },
     {
       path: '/favorites',
       name: 'favorites',
-      component: FavoritesView,
+      component: () => import('@/views/FavoritesView.vue'),
     },
+    { path: '/collections', name: 'collections', component: () => import('@/views/CollectionsView.vue') },
+    { path: '/collections/:collectionId', name: 'collection', component: () => import('@/views/CollectionView.vue') },
     {
       path: '/libraries/:libraryId',
       name: 'library',
-      component: LibraryView,
+      component: () => import('@/views/LibraryView.vue'),
     },
     {
       path: '/libraries/:libraryId/settings',
       name: 'library-settings',
-      component: LibrarySettingsView,
+      component: () => import('@/views/LibrarySettingsView.vue'),
     },
     {
       path: '/videos/:mediaId',
       name: 'video',
-      component: VideoView,
+      component: () => import('@/views/VideoView.vue'),
     },
   ],
 })

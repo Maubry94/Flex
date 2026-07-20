@@ -70,6 +70,32 @@ type playbackResponse struct {
 	URL  string             `json:"url"`
 }
 
+type folderAssignmentResponse struct {
+	MediaID string `json:"mediaId"`
+	Folder  string `json:"folder"`
+}
+
+type folderAssignmentListResponse struct {
+	Items []folderAssignmentResponse `json:"items"`
+}
+
+func libraryFoldersHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		items, err := service.Folders(request.Context(), request.PathValue("libraryID"))
+		if err != nil {
+			logger.Error("list library folders", "error", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "Impossible de charger les dossiers")
+			return
+		}
+		payload := folderAssignmentListResponse{Items: make([]folderAssignmentResponse, 0, len(items))}
+		for _, item := range items {
+			payload.Items = append(payload.Items, folderAssignmentResponse{MediaID: item.MediaID, Folder: item.Folder})
+		}
+		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(response).Encode(payload)
+	}
+}
+
 func listMediaHandler(service mediaService, logger *slog.Logger) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		libraryID := request.URL.Query().Get("libraryId")

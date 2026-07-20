@@ -57,6 +57,9 @@ func (repository *memoryMediaRepository) Home(context.Context, int) (Home, error
 func (repository *memoryMediaRepository) Search(context.Context, string, int) ([]SearchResult, error) {
 	return nil, nil
 }
+func (repository *memoryMediaRepository) Folders(context.Context, string) ([]FolderAssignment, error) {
+	return nil, nil
+}
 
 func (repository *memoryMediaRepository) UpdateMetadata(_ context.Context, id string, input MetadataInput) error {
 	for index := range repository.items {

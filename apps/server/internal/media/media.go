@@ -72,6 +72,11 @@ type SearchResult struct {
 	LibraryName string
 }
 
+type FolderAssignment struct {
+	MediaID string
+	Folder  string
+}
+
 type Probe interface {
 	Analyze(ctx context.Context, path string) (TechnicalMetadata, error)
 }
@@ -96,6 +101,7 @@ type Repository interface {
 	Get(ctx context.Context, id string) (File, error)
 	Home(ctx context.Context, limit int) (Home, error)
 	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
+	Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error)
 	UpdateMetadata(ctx context.Context, id string, input MetadataInput) error
 	Upsert(ctx context.Context, file File) error
 	DeleteMissing(ctx context.Context, libraryID string, existingPaths []string) error
@@ -132,6 +138,10 @@ func (scanner *Scanner) Home(ctx context.Context) (Home, error) {
 
 func (scanner *Scanner) Search(ctx context.Context, query string) ([]SearchResult, error) {
 	return scanner.repository.Search(ctx, strings.TrimSpace(query), 20)
+}
+
+func (scanner *Scanner) Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error) {
+	return scanner.repository.Folders(ctx, libraryID)
 }
 
 func (scanner *Scanner) UpdateMetadata(ctx context.Context, id string, input MetadataInput) (File, error) {
@@ -309,6 +319,34 @@ func (repository *SQLRepository) Search(ctx context.Context, query string, limit
 		results = append(results, result)
 	}
 	return results, rows.Err()
+}
+
+func (repository *SQLRepository) Folders(ctx context.Context, libraryID string) ([]FolderAssignment, error) {
+	rows, err := repository.db.QueryContext(ctx, `SELECT m.id, m.path, l.path FROM media_files m JOIN libraries l ON l.id = m.library_id WHERE m.library_id = ? ORDER BY m.path`, libraryID)
+	if err != nil {
+		return nil, fmt.Errorf("list media folders: %w", err)
+	}
+	defer rows.Close()
+	items := make([]FolderAssignment, 0)
+	for rows.Next() {
+		var mediaID, mediaPath, libraryPath string
+		if err := rows.Scan(&mediaID, &mediaPath, &libraryPath); err != nil {
+			return nil, fmt.Errorf("scan media folder: %w", err)
+		}
+		relativePath, err := filepath.Rel(libraryPath, mediaPath)
+		if err != nil || strings.HasPrefix(relativePath, "..") {
+			continue
+		}
+		folder := filepath.ToSlash(filepath.Dir(relativePath))
+		if folder == "." {
+			folder = ""
+		}
+		items = append(items, FolderAssignment{MediaID: mediaID, Folder: folder})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate media folders: %w", err)
+	}
+	return items, nil
 }
 
 func escapeLike(value string) string {

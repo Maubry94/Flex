@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"flex.local/server/internal/collection"
 	"flex.local/server/internal/config"
 	"flex.local/server/internal/database"
 	"flex.local/server/internal/httpserver"
@@ -17,6 +18,7 @@ import (
 	"flex.local/server/internal/media"
 	"flex.local/server/internal/playback"
 	"flex.local/server/internal/scanmanager"
+	"flex.local/server/internal/tag"
 )
 
 func main() {
@@ -44,10 +46,12 @@ func main() {
 	}
 	defer scanCoordinator.Close()
 	playbackService := playback.NewService(playback.NewSQLRepository(db))
+	tagService := tag.NewService(db)
+	collectionService := collection.NewService(db)
 
 	server := &http.Server{
 		Addr:              cfg.Address(),
-		Handler:           httpserver.New(cfg, logger, libraryService, mediaScanner, scanCoordinator, playbackService),
+		Handler:           httpserver.New(cfg, logger, libraryService, mediaScanner, scanCoordinator, playbackService, tagService, collectionService),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

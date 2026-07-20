@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Film, Heart, Menu, Search } from '@lucide/vue'
+import { Film, Heart, House, Layers3, Library, Menu, Search } from '@lucide/vue'
 import { nextTick, ref } from 'vue'
 
 import GlobalSearch from '@/components/search/GlobalSearch.vue'
@@ -32,6 +32,7 @@ async function openMobileSearch(): Promise<void> {
           <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'home' }">Accueil</RouterLink>
           <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'libraries' }">Bibliothèques</RouterLink>
           <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'favorites' }">Favoris</RouterLink>
+          <RouterLink class="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'collections' }">Collections</RouterLink>
         </nav>
 
         <div class="ml-auto flex items-center gap-1">
@@ -54,9 +55,10 @@ async function openMobileSearch(): Promise<void> {
               </SheetHeader>
               <nav class="flex flex-col gap-1 p-4" aria-label="Navigation mobile">
                 <button type="button" class="flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" @click="openMobileSearch"><Search class="size-4" />Rechercher</button>
-                <RouterLink class="rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'home' }" @click="isMobileMenuOpen = false">Accueil</RouterLink>
-                <RouterLink class="rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'libraries' }" @click="isMobileMenuOpen = false">Bibliothèques</RouterLink>
+                <RouterLink class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'home' }" @click="isMobileMenuOpen = false"><House class="size-4" />Accueil</RouterLink>
+                <RouterLink class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'libraries' }" @click="isMobileMenuOpen = false"><Library class="size-4" />Bibliothèques</RouterLink>
                 <RouterLink class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'favorites' }" @click="isMobileMenuOpen = false"><Heart class="size-4" />Favoris</RouterLink>
+                <RouterLink class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-white/5 hover:text-foreground" active-class="bg-white/8 text-foreground" :to="{ name: 'collections' }" @click="isMobileMenuOpen = false"><Layers3 class="size-4" />Collections</RouterLink>
               </nav>
             </SheetContent>
           </Sheet>
